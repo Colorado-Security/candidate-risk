@@ -21,7 +21,7 @@ jobs:
       - run: npm ci
 
       - name: Install actionlint
-        run: curl -sSf https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash | bash -s -- latest -b /usr/local/bin
+        run: curl -sSf https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash | bash -s -- latest /usr/local/bin
 
       - run: npm run lint
 
