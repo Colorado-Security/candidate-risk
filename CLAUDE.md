@@ -37,21 +37,29 @@ The entire application lives in `Candidate_Risk_Dashboard.html` — React 18 is 
 
 ### Modes
 
-The app has two modes toggled by a header button:
+The app has three modes toggled by header buttons:
 - **Example mode** — displays `EXAMPLE_SCORES` with radio inputs disabled; shows a case summary panel at the bottom.
-- **Assess mode** — blank scores, editable inputs, candidate name/role fields, and a Reset button.
+- **Assess mode** — blank scores, editable inputs, candidate name/role fields, Reset button, and a **Copy Review Link** button that encodes the assessment as a URL-safe base64 string.
+- **Panel View** — aggregates multiple reviewers' encoded links into a composite score; shows per-reviewer totals, per-category averages, and spread flags. Panel state syncs to the URL.
 
-Score state is maintained in two separate `useState` hooks (`scores` for example, `blankScores` for assess) so switching modes preserves each independently.
+Score state is maintained in separate `useState` hooks (`scores` for example, `blankScores` for assess, `panelReviews` for panel) so switching modes preserves each independently.
 
 ### Components
 
 - `GaugeRing` — SVG ring chart showing total score vs. max.
 - `MiniBar` — horizontal progress bar per category.
 - `CategoryCard` — renders one category with its radio level options.
+- `PanelImport` — input UI for pasting reviewer links in Panel View.
+- `PanelSummary` — aggregate gauge and tier for the panel composite score.
+- `PanelCategoryCard` — per-category average with spread flag in Panel View.
+- `ReviewerTable` — per-reviewer score breakdown table in Panel View.
+- `PanelView` — root panel component; composes the above panel pieces.
 - `App` — root component; owns all state and renders header, risk summary, tier legend, category grid, and (in example mode) the case detail panel.
 
 ## Security constraints
 
-The CSP header (`Content-Security-Policy`) allows only `cdnjs.cloudflare.com` for scripts. Do not add inline `eval`, dynamic imports, or external script sources without updating the CSP. All script content must remain inline (current CSP uses `'unsafe-inline'` for scripts). The `referrer`, cache-busting meta tags, and `Permissions-Policy` are intentional — preserve them.
+The CSP header (`Content-Security-Policy`) allows only `cdnjs.cloudflare.com` for scripts, with `worker-src 'none'` and `upgrade-insecure-requests`. Do not add inline `eval`, dynamic imports, or external script sources without updating the CSP. All script content must remain inline (current CSP uses `'unsafe-inline'` for scripts). The `referrer`, cache-busting meta tags, and `Permissions-Policy` are intentional — preserve them.
+
+URL encoding uses `TextEncoder`/`TextDecoder` (not the deprecated `escape`/`unescape`). All string fields decoded from review links pass through `safeStr()` — a validation helper that enforces type and length caps. Do not bypass it.
 
 No data is sent anywhere; the tool is entirely client-side with no network calls from application code.
