@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<!-- V1: Ralph Forsythe | V2: Joey Stanford, CISO, joeystanford@pantheon.io — Security hardening & privacy improvements -->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' https://cdnjs.cloudflare.com/; style-src 'unsafe-inline'; object-src 'none'; base-uri 'self';">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex, nofollow, noarchive, nocache">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate, max-age=0">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<meta http-equiv="Permissions-Policy" content="geolocation=(), microphone=(), camera=(), payment=(), usb=()">
+<title>Candidate Fraud Risk Assessment</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js" integrity="sha384-tMH8h3BGESGckSAVGZ82T9n90ztNXxvdwvdM6UoR56cYcf+0iGXBliJ29D+wZ/x8" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js" integrity="sha384-bm7MnzvK++ykSwVJ2tynSE5TRdN+xL418osEVF2DE/L/gfWHj91J2Sphe582B1Bh" crossorigin="anonymous"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #020617; color: #e2e8f0; }
+  input[type="radio"] { accent-color: #3b82f6; }
+  input[type="text"] { outline: none; }
+  input[type="text"]:focus { border-color: #3b82f6 !important; }
+  button:hover { filter: brightness(1.15); }
+  label:hover { background: #1e293b !important; }
+  ::-webkit-scrollbar { width: 8px; }
+  ::-webkit-scrollbar-track { background: #0f172a; }
+  ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const e = React.createElement;
+const { useState, useCallback } = React;
+
+const CATEGORIES = [
+  { id:"digital_footprint", name:"Digital Footprint", max:20, stage:"Stage 1", description:"Online professional presence verification",
+    levels:[{score:0,label:"Robust presence",desc:"LinkedIn, GitHub, publications, conference activity"},{score:5,label:"Moderate presence",desc:"LinkedIn exists but sparse; limited other footprint"},{score:10,label:"Minimal presence",desc:"Bare LinkedIn or single platform; no depth"},{score:15,label:"Near-zero presence",desc:"Profile exists but appears fabricated or very recent"},{score:20,label:"No verifiable footprint",desc:"Nothing found across any platform"}]},
+  { id:"employer_verification", name:"Employer Verification", max:15, stage:"Stage 1", description:"Can stated employers be independently verified?",
+    levels:[{score:0,label:"All verified",desc:"Every employer confirmed via public records or direct contact"},{score:5,label:"Most verified",desc:"One employer difficult to verify but others check out"},{score:8,label:"Some unverifiable",desc:"Multiple employers cannot be independently confirmed"},{score:15,label:"None verifiable",desc:"No employer can be linked to the candidate independently"}]},
+  { id:"resume_authenticity", name:"Resume Authenticity", max:10, stage:"Stage 1", description:"Does the resume appear generated from the job posting?",
+    levels:[{score:0,label:"Unique content",desc:"Distinctive language, specific accomplishments"},{score:5,label:"Some overlap",desc:"Moderate keyword alignment with job description"},{score:10,label:"Mirrors JD",desc:"Language is copy-pasted or algorithmically generated from posting"}]},
+  { id:"phone_contact", name:"Phone / Contact Integrity", max:10, stage:"Stage 1", description:"Phone number and contact information consistency",
+    levels:[{score:0,label:"Clean match",desc:"Active number, matches stated location and identity"},{score:3,label:"Minor mismatch",desc:"Area code doesn't match but number is active"},{score:5,label:"Moderate concern",desc:"VoIP number or different region"},{score:10,label:"Critical mismatch",desc:"Wrong country, disconnected, or swapped without explanation"}]},
+  { id:"identity_docs", name:"Identity Documentation", max:15, stage:"Stage 3\u20134", description:"E-verify, ID checks, and document consistency",
+    levels:[{score:0,label:"Clean pass",desc:"E-verify passed, live ID matches, all consistent"},{score:5,label:"Minor issue",desc:"Minor discrepancy resolved with explanation"},{score:8,label:"Moderate concern",desc:"E-verify delayed or required additional documentation"},{score:15,label:"E-verify fail + substitute",desc:"Electronic verification failed; notarized substitute provided"}]},
+  { id:"comp_behavior", name:"Compensation Behavior", max:5, stage:"Stage 3", description:"Salary expectations and negotiation patterns",
+    levels:[{score:0,label:"Normal negotiation",desc:"Reasonable expectations, standard back-and-forth"},{score:3,label:"Low expectations",desc:"Below-market ask with minimal negotiation"},{score:5,label:"Instant accept",desc:"Anomalously low comp, zero negotiation, immediate sign"}]},
+  { id:"interview_signals", name:"Interview Signals", max:10, stage:"Stage 2", description:"AI-assistance indicators, video issues, behavioral anomalies",
+    levels:[{score:0,label:"Clean interview",desc:"Natural responses, good video, no red flags"},{score:3,label:"Minor signals",desc:"One minor issue (single outage, one repeated question)"},{score:5,label:"Moderate signals",desc:"1\u20132 flags (occasional delays, generic answers)"},{score:10,label:"Strong signals",desc:"AI-assistance pattern, repeated requests, or video refusal"}]},
+  { id:"geo_consistency", name:"Geographic Consistency", max:5, stage:"Stage 2", description:"Do location claims hold up under scrutiny?",
+    levels:[{score:0,label:"All consistent",desc:"Address, phone, IP, local knowledge all align"},{score:3,label:"Minor mismatch",desc:"One inconsistency with plausible explanation"},{score:5,label:"Major contradiction",desc:"Multiple geographic inconsistencies or failed local knowledge test"}]},
+  { id:"hardware_onboarding", name:"Hardware / Onboarding", max:10, stage:"Stage 4", description:"Laptop activation and onboarding process signals",
+    levels:[{score:0,label:"Normal activation",desc:"Laptop activated within 48h, smooth onboarding"},{score:3,label:"Slight delay",desc:"Activated within 72h with reasonable explanation"},{score:5,label:"Delayed activation",desc:"Significant delay with start date change requested"},{score:10,label:"Never activated",desc:"Device never powered on + delay request. Possible reshipment."}]},
+  { id:"identity_continuity", name:"Identity Continuity", max:15, stage:"Stage 4", description:"Does the same person appear consistently across all stages?",
+    levels:[{score:0,label:"Consistent",desc:"Same individual across all touchpoints"},{score:5,label:"Minor variance",desc:"Slight appearance change, easily explained"},{score:8,label:"Notable discrepancy",desc:"Enough difference to warrant second verification"},{score:15,label:"Confirmed mismatch",desc:"Different person appeared at onboarding vs. interview"}]}
+];
+
+const RISK_TIERS = [
+  {max:15,level:"LOW",color:"#22c55e",bg:"#f0fdf4",action:"Proceed normally. Standard monitoring."},
+  {max:35,level:"MODERATE",color:"#ca8a04",bg:"#fefce8",action:"Proceed with caution. Additional OSINT verification. Flag for CISO awareness."},
+  {max:60,level:"HIGH",color:"#dc2626",bg:"#fef2f2",action:"Do NOT extend offer without CISO approval. Full OSINT + live ID verification required."},
+  {max:999,level:"CRITICAL",color:"#991b1b",bg:"#450a0a",action:"REJECT. CISO + Legal sign-off required. Preserve evidence. Initiate reporting."}
+];
+
+const EXAMPLE_SCORES = {digital_footprint:20,employer_verification:15,resume_authenticity:10,phone_contact:10,identity_docs:15,comp_behavior:5,interview_signals:5,geo_consistency:5,hardware_onboarding:10,identity_continuity:15};
+
+function getRiskTier(score){ return RISK_TIERS.find(t=>score<=t.max)||RISK_TIERS[RISK_TIERS.length-1]; }
+
+function GaugeRing({score,max,size}){
+  size=size||120;
+  var pct=Math.min(score/max,1), r=(size-12)/2, circ=2*Math.PI*r, tier=getRiskTier(score);
+  return e("svg",{role:"img","aria-label":"Risk score: "+score+" out of "+max,width:size,height:size,viewBox:"0 0 "+size+" "+size},
+    e("circle",{cx:size/2,cy:size/2,r:r,fill:"none",stroke:"#1e293b",strokeWidth:8}),
+    e("circle",{cx:size/2,cy:size/2,r:r,fill:"none",stroke:tier.color,strokeWidth:8,strokeDasharray:pct*circ+" "+circ,strokeDashoffset:circ*0.25,strokeLinecap:"round",style:{transition:"stroke-dasharray 0.6s ease"}}),
+    e("text",{x:size/2,y:size/2-6,textAnchor:"middle",fill:tier.color,fontSize:28,fontWeight:800},score),
+    e("text",{x:size/2,y:size/2+14,textAnchor:"middle",fill:"#94a3b8",fontSize:11},"/ "+max)
+  );
+}
+
+function MiniBar({score,max,color}){
+  var pct=max>0?(score/max)*100:0;
+  return e("div",{style:{display:"flex",alignItems:"center",gap:8,width:"100%"}},
+    e("div",{style:{flex:1,height:8,borderRadius:4,background:"#1e293b",overflow:"hidden"}},
+      e("div",{style:{width:pct+"%",height:"100%",borderRadius:4,background:color,transition:"width 0.4s ease"}})
+    ),
+    e("span",{style:{fontSize:13,fontWeight:700,color:color,minWidth:40,textAlign:"right"}},score+"/"+max)
+  );
+}
+
+function CategoryCard({cat,score,onChange,isExample}){
+  var pct=cat.max>0?score/cat.max:0;
+  var barColor=pct>=0.8?"#dc2626":pct>=0.5?"#ca8a04":pct>0?"#3b82f6":"#22c55e";
+  return e("div",{style:{background:"#0f172a",border:"1px solid "+(pct>=0.8?"#dc262644":"#1e293b"),borderRadius:10,padding:"16px 18px",display:"flex",flexDirection:"column",gap:10}},
+    e("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}},
+      e("div",null,
+        e("div",{style:{fontSize:14,fontWeight:700,color:"#e2e8f0",letterSpacing:"0.01em"}},cat.name),
+        e("div",{style:{fontSize:11,color:"#64748b",marginTop:2}},cat.stage+" \u00b7 "+cat.description)
+      )
+    ),
+    e(MiniBar,{score:score,max:cat.max,color:barColor}),
+    e("div",{style:{display:"flex",flexDirection:"column",gap:4}},
+      cat.levels.map(function(lvl){
+        return e("label",{key:lvl.score,style:{display:"flex",alignItems:"flex-start",gap:8,padding:"5px 8px",borderRadius:6,cursor:isExample?"default":"pointer",background:score===lvl.score?"#1e293b":"transparent",border:score===lvl.score?"1px solid #334155":"1px solid transparent",opacity:isExample&&score!==lvl.score?0.4:1,transition:"all 0.15s ease"}},
+          e("input",{type:"radio",name:cat.id,checked:score===lvl.score,onChange:function(){if(!isExample)onChange(cat.id,lvl.score)},disabled:isExample,style:{marginTop:3}}),
+          e("div",null,
+            e("span",{style:{fontSize:12,fontWeight:600,color:score===lvl.score?"#f1f5f9":"#94a3b8"}},lvl.label),
+            e("span",{style:{fontSize:11,color:"#64748b",marginLeft:6}},lvl.desc)
+          )
+        );
+      })
+    )
+  );
+}
+
+function App(){
+  var modeState=useState("example"), mode=modeState[0], setMode=modeState[1];
+  var scState=useState(Object.assign({},EXAMPLE_SCORES)), scores=scState[0];
+  var blankInit={}; CATEGORIES.forEach(function(c){blankInit[c.id]=0;});
+  var blState=useState(Object.assign({},blankInit)), blankScores=blState[0], setBlankScores=blState[1];
+  var nameState=useState(""), candidateName=nameState[0], setCandidateName=nameState[1];
+  var roleState=useState(""), candidateRole=roleState[0], setCandidateRole=roleState[1];
+
+  var activeScores=mode==="example"?scores:blankScores;
+  var isExample=mode==="example";
+  var totalScore=0; Object.keys(activeScores).forEach(function(k){totalScore+=activeScores[k];});
+  var maxScore=0; CATEGORIES.forEach(function(c){maxScore+=c.max;});
+  var tier=getRiskTier(totalScore);
+  var flagsHit=CATEGORIES.filter(function(c){return activeScores[c.id]>0;}).length;
+
+  var handleChange=useCallback(function(id,val){
+    setBlankScores(function(prev){var n=Object.assign({},prev);n[id]=val;return n;});
+  },[]);
+  function handleReset(){
+    var r={}; CATEGORIES.forEach(function(c){r[c.id]=0;}); setBlankScores(r);
+    setCandidateName(""); setCandidateRole("");
+  }
+
+  return e("div",{style:{minHeight:"100vh"}},
+    // Header
+    e("div",{style:{background:"linear-gradient(135deg, #0f172a 0%, #1e293b 100%)",borderBottom:"1px solid #1e293b",padding:"24px 32px"}},
+      e("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:16}},
+        e("div",{style:{display:"flex",alignItems:"center",gap:12}},
+          e("div",{style:{width:36,height:36,borderRadius:8,background:"linear-gradient(135deg, #3b82f6, #1d4ed8)",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:900,fontSize:14,color:"#fff",letterSpacing:1}},"P8"),
+          e("div",null,
+            e("h1",{style:{fontSize:20,fontWeight:800,letterSpacing:"-0.02em"}},"Candidate Fraud Risk Assessment"),
+            e("p",{style:{fontSize:12,color:"#64748b"}},"Security & HR \u00b7 Confidential \u00b7 V2")
+          )
+        ),
+        e("div",{style:{display:"flex",gap:8}},
+          e("button",{onClick:function(){setMode("example")},style:{padding:"8px 16px",borderRadius:6,border:"1px solid #334155",background:mode==="example"?"#1e40af":"#0f172a",color:mode==="example"?"#fff":"#94a3b8",cursor:"pointer",fontSize:13,fontWeight:600,transition:"all 0.15s"}},"Example: Flagged Candidate"),
+          e("button",{onClick:function(){setMode("assess")},style:{padding:"8px 16px",borderRadius:6,border:"1px solid #334155",background:mode==="assess"?"#1e40af":"#0f172a",color:mode==="assess"?"#fff":"#94a3b8",cursor:"pointer",fontSize:13,fontWeight:600,transition:"all 0.15s"}},"New Assessment")
+        )
+      )
+    ),
+
+    e("div",{style:{padding:"24px 32px",maxWidth:1400,margin:"0 auto"}},
+      // Risk Summary
+      e("div",{style:{display:"grid",gridTemplateColumns:"auto 1fr auto",gap:32,alignItems:"center",background:"linear-gradient(135deg, "+tier.bg+"11, "+tier.bg+"08)",border:"1px solid "+tier.color+"33",borderRadius:14,padding:"20px 28px",marginBottom:28}},
+        e(GaugeRing,{score:totalScore,max:maxScore}),
+        e("div",null,
+          e("div",{style:{display:"flex",alignItems:"center",gap:12,marginBottom:6}},
+            e("span",{style:{display:"inline-block",padding:"4px 14px",borderRadius:20,background:tier.color,color:"#fff",fontSize:13,fontWeight:800,letterSpacing:"0.05em"}},tier.level+" RISK"),
+            mode==="example"?e("span",{style:{fontSize:14,color:"#94a3b8",fontWeight:500}},"Flagged Candidate \u00b7 Senior Software Engineer"):
+              candidateName?e("span",{style:{fontSize:14,color:"#94a3b8",fontWeight:500}},candidateName+(candidateRole?" \u00b7 "+candidateRole:"")):null
+          ),
+          e("p",{style:{fontSize:14,color:"#cbd5e1",lineHeight:1.5}},tier.action),
+          mode==="example"?e("p",{style:{marginTop:8,fontSize:12,color:"#64748b",lineHeight:1.4}},"This example shows a confirmed DPRK IT worker fraud attempt with 10 red flags across all protocol stages. The candidate scored 110/115 \u2014 near-maximum risk across every category."):null
+        ),
+        e("div",{style:{textAlign:"center"}},
+          e("div",{style:{fontSize:11,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em",fontWeight:600}},"Flags Hit"),
+          e("div",{style:{fontSize:32,fontWeight:900,color:tier.color}},flagsHit),
+          e("div",{style:{fontSize:11,color:"#64748b"}},"of "+CATEGORIES.length)
+        )
+      ),
+
+      // Name/role inputs for assess mode
+      mode==="assess"?e("div",{style:{display:"flex",gap:12,marginBottom:20,flexWrap:"wrap",alignItems:"center"}},
+        e("input",{type:"text",placeholder:"Candidate name",value:candidateName,onChange:function(ev){setCandidateName(ev.target.value)},maxLength:200,autoComplete:"off",style:{padding:"8px 14px",borderRadius:6,border:"1px solid #334155",background:"#0f172a",color:"#e2e8f0",fontSize:14,width:220}}),
+        e("input",{type:"text",placeholder:"Applied role",value:candidateRole,onChange:function(ev){setCandidateRole(ev.target.value)},maxLength:200,autoComplete:"off",style:{padding:"8px 14px",borderRadius:6,border:"1px solid #334155",background:"#0f172a",color:"#e2e8f0",fontSize:14,width:220}}),
+        e("button",{onClick:handleReset,style:{padding:"8px 16px",borderRadius:6,border:"1px solid #334155",background:"#0f172a",color:"#94a3b8",cursor:"pointer",fontSize:13,fontWeight:600}},"Reset All")
+      ):null,
+
+      // Tier legend
+      e("div",{style:{display:"grid",gridTemplateColumns:"repeat(4, 1fr)",gap:10,marginBottom:24}},
+        RISK_TIERS.map(function(t,i){
+          var prevMax=i>0?RISK_TIERS[i-1].max:-1;
+          var active=totalScore<=t.max&&totalScore>prevMax;
+          return e("div",{key:t.level,style:{padding:"10px 14px",borderRadius:8,border:"1px solid "+t.color+"33",background:active?t.color+"22":"#0f172a",opacity:active?1:0.5,transition:"all 0.3s ease"}},
+            e("div",{style:{fontSize:11,fontWeight:800,color:t.color,letterSpacing:"0.06em"}},t.level),
+            e("div",{style:{fontSize:12,color:"#64748b",marginTop:2}},t.max<999?"0\u2013"+t.max:"61+"," pts")
+          );
+        })
+      ),
+
+      // Category cards
+      e("div",{style:{display:"grid",gridTemplateColumns:"repeat(auto-fill, minmax(380px, 1fr))",gap:14}},
+        CATEGORIES.map(function(cat){
+          return e(CategoryCard,{key:cat.id,cat:cat,score:activeScores[cat.id],onChange:handleChange,isExample:isExample});
+        })
+      ),
+
+      // Example case detail
+      mode==="example"?e("div",{style:{marginTop:28,background:"#0f172a",border:"1px solid #1e293b",borderRadius:12,padding:24}},
+        e("h3",{style:{marginBottom:16,fontSize:16,fontWeight:700,color:"#f1f5f9"}},"Case Summary: Flagged Candidate \u2014 Confirmed DPRK IT Worker Fraud"),
+        e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,fontSize:13,color:"#94a3b8",lineHeight:1.6}},
+          e("div",null,
+            e("div",{style:{fontWeight:700,color:"#e2e8f0",marginBottom:4}},"Key Indicators"),
+            e("ul",{style:{margin:0,paddingLeft:18}},
+              e("li",null,"Zero online footprint for a claimed 10+ year senior engineer"),
+              e("li",null,"All three employers (SoftXPro, STS Software, SDLC Corp) are unverifiable"),
+              e("li",null,"Resume language precisely mirrors the job posting"),
+              e("li",null,"California phone number for a Canadian-resident candidate; disconnected"),
+              e("li",null,"E-verify failed; notarized substitute ID provided")
+            )
+          ),
+          e("div",null,
+            e("div",{style:{fontWeight:700,color:"#e2e8f0",marginBottom:4}},"Decisive Evidence"),
+            e("ul",{style:{margin:0,paddingLeft:18}},
+              e("li",null,"Onboarding photo is a different person than who interviewed"),
+              e("li",null,"Company laptop received but never powered on (MDM confirms)"),
+              e("li",null,"Car accident in Nova Scotia, 1,700 km from stated address"),
+              e("li",null,"Anomalously low salary, zero negotiation, instant acceptance"),
+              e("li",null,"Pattern matches FBI IC3 + RCMP advisories on DPRK IT worker TTPs")
+            )
+          )
+        ),
+        e("div",{style:{marginTop:16,padding:"12px 16px",borderRadius:8,background:"#450a0a",border:"1px solid #dc2626",fontSize:13,color:"#fca5a5",fontWeight:600}},"VERDICT: DO NOT ONBOARD. Terminate all processes. Preserve evidence. Report to FBI IC3 and RCMP. Engage Legal before any communication with the candidate. Treat issued hardware as compromised.")
+      ):null,
+
+      // Footer
+      e("div",{style:{marginTop:32,padding:"16px 0",borderTop:"1px solid #1e293b",display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:11,color:"#475569"}},
+        e("span",null,"Candidate Fraud Response Protocol \u00b7 Appendix B Scoring Dashboard"),
+        e("span",null,"Classification: CONFIDENTIAL \u00b7 Internal Use Only \u00b7 V1: Ralph Forsythe \u00b7 V2: Joey Stanford, CISO, joeystanford@pantheon.io (security hardening)")
+      )
+    )
+  );
+}
+
+ReactDOM.render(e(App), document.getElementById("root"));
+</script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+{
+  "name": "canddiate-risk",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "lint": "npm run lint:html && npm run lint:js",
+    "lint:html": "htmlhint Candidate_Risk_Dashboard.html",
+    "lint:js": "eslint Candidate_Risk_Dashboard.html"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.2.0",
+    "eslint-plugin-html": "^8.1.4",
+    "globals": "^17.4.0",
+    "htmlhint": "^1.9.2"
+  }
+}

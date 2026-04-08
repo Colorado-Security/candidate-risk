@@ -1,0 +1,16 @@
+repos:
+  - repo: local
+    hooks:
+      - id: htmlhint
+        name: HTMLHint
+        language: system
+        entry: npm run lint:html --
+        pass_filenames: false
+        files: \.html$
+
+      - id: eslint
+        name: ESLint
+        language: system
+        entry: npm run lint:js --
+        pass_filenames: false
+        files: \.html$
