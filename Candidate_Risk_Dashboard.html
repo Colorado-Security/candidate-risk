@@ -37,7 +37,7 @@
 <div id="root"></div>
 <script>
 const e = React.createElement;
-const { useState, useCallback } = React;
+const { useState, useCallback, useEffect } = React;
 
 const CATEGORIES = [
   { id:"digital_footprint", name:"Digital Footprint", max:20, stage:"Prescreen", filterStages:["prescreen"], description:"Online professional presence verification",
@@ -83,7 +83,78 @@ const RISK_TIERS = [
 
 const EXAMPLE_SCORES = {digital_footprint:20,employer_verification:15,resume_authenticity:10,phone_contact:10,reference_integrity:10,geo_consistency:5,timezone_behavior:7,account_duplication:8,third_party_handler:15,interview_signals:7,technical_screen:10,comp_behavior:5,identity_docs:15,payment_flags:7,hardware_onboarding:10,identity_continuity:15};
 
+const CATEGORY_MAX = CATEGORIES.reduce(function(a,c){return a+c.max;},0);
+
 function getRiskTier(score){ return RISK_TIERS.find(t=>score<=t.max)||RISK_TIERS[RISK_TIERS.length-1]; }
+
+// --- URL encode/decode utilities ---
+
+function encodeReview(payload){
+  var json=JSON.stringify(payload);
+  return btoa(unescape(encodeURIComponent(json))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
+}
+
+function extractCode(raw){
+  var s=(raw||'').trim();
+  if(s.indexOf('?r=')!==-1) s=s.split('?r=').pop().split('&')[0];
+  return s;
+}
+
+function decodeReview(raw){
+  try{
+    var b64=extractCode(raw).replace(/-/g,'+').replace(/_/g,'/');
+    var pad=b64.length%4===0?'':'===='.slice(b64.length%4);
+    var obj=JSON.parse(decodeURIComponent(escape(atob(b64+pad))));
+    if(!obj||typeof obj.s!=='object') return null;
+    var fullScores={};
+    CATEGORIES.forEach(function(c){fullScores[c.id]=obj.s[c.id]!==undefined?obj.s[c.id]:-1;});
+    return {v:obj.v||1,name:obj.n||'',role:obj.ro||'',assessor:obj.a||'',date:obj.d||'',scores:fullScores};
+  }catch(_){return null;} // eslint-disable-line no-unused-vars
+}
+
+function compactScores(scores){
+  var out={};
+  Object.keys(scores).forEach(function(k){if(scores[k]!==-1)out[k]=scores[k];});
+  return out;
+}
+
+// --- Aggregate utilities (all exclude -1 / Not Assessed values) ---
+
+function getReviewerTotal(review){
+  var score=0,maxPossible=0;
+  CATEGORIES.forEach(function(c){
+    if(review.scores[c.id]!==-1){score+=Math.max(0,review.scores[c.id]);maxPossible+=c.max;}
+  });
+  return {score:score,maxPossible:maxPossible};
+}
+
+function inconsistencyScore(stdev,catMax){
+  if(catMax===0) return 0;
+  return Math.min(stdev/(catMax/2),1);
+}
+
+function aggregateReviews(reviews){
+  var perCategory={};
+  var compositeScore=0;
+  CATEGORIES.forEach(function(cat){
+    var assessors=reviews.filter(function(r){return r.scores[cat.id]!==-1;});
+    var values=assessors.map(function(r){return Math.max(0,r.scores[cat.id]);});
+    var avg=0,min=0,max=0,stdev=0,incon=0;
+    if(values.length>0){
+      avg=values.reduce(function(a,b){return a+b;},0)/values.length;
+      min=Math.min.apply(null,values);
+      max=Math.max.apply(null,values);
+      var variance=values.reduce(function(acc,v){return acc+Math.pow(v-avg,2);},0)/values.length;
+      stdev=Math.sqrt(variance);
+      incon=inconsistencyScore(stdev,cat.max);
+    }
+    compositeScore+=avg;
+    perCategory[cat.id]={avg:avg,min:min,max:max,stdev:stdev,inconsistency:incon,assessorCount:assessors.length,values:values,assessors:assessors};
+  });
+  return {perCategory:perCategory,compositeScore:compositeScore,compositeMax:CATEGORY_MAX,reviewCount:reviews.length};
+}
+
+// --- Shared components ---
 
 function GaugeRing({score,max,size}){
   size=size||120;
@@ -132,6 +203,252 @@ function CategoryCard({cat,score,onChange,isExample,note,onNoteChange}){
   );
 }
 
+// --- Instructions modal ---
+
+function InstructionsModal({onClose}){
+  var sectionHead=function(text){return e("h3",{style:{fontSize:15,fontWeight:700,color:"#60a5fa",marginBottom:10,marginTop:24}},text);};
+  var para=function(text){return e("p",{style:{fontSize:13,color:"#94a3b8",lineHeight:1.7,marginBottom:6}},text);};
+  var li=function(text){return e("li",{style:{fontSize:13,color:"#94a3b8",lineHeight:1.7,marginBottom:4}},text);};
+  var ol=function(){var items=Array.prototype.slice.call(arguments);return e("ol",{style:{paddingLeft:20,marginBottom:8}},items);};
+  var ul=function(){var items=Array.prototype.slice.call(arguments);return e("ul",{style:{paddingLeft:20,marginBottom:8}},items);};
+  var tag=function(label,color){return e("span",{style:{display:"inline-block",padding:"1px 8px",borderRadius:10,background:color+"22",border:"1px solid "+color+"55",color:color,fontSize:11,fontWeight:700,marginRight:6}},label);};
+
+  return e("div",{className:"no-print",onClick:onClose,style:{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",display:"flex",alignItems:"flex-start",justifyContent:"center",overflowY:"auto",zIndex:1000,padding:"40px 20px"}},
+    e("div",{onClick:function(ev){ev.stopPropagation();},style:{background:"#0f172a",border:"1px solid #1e293b",borderRadius:14,padding:"32px",maxWidth:700,width:"100%",position:"relative",marginBottom:40}},
+      e("button",{onClick:onClose,style:{position:"absolute",top:16,right:16,background:"none",border:"none",color:"#64748b",fontSize:22,cursor:"pointer",lineHeight:1,padding:"0 4px"}},"×"),
+      e("h2",{style:{fontSize:19,fontWeight:800,color:"#f1f5f9",marginBottom:4}},"How to Use This Tool"),
+      e("p",{style:{fontSize:12,color:"#475569",marginBottom:0}},"Standalone \u00b7 No data leaves your device \u00b7 No account required"),
+
+      sectionHead("What This Tool Does"),
+      para("Score a candidate across up to 16 fraud risk categories. Each category is staged — Prescreen, Interview, Offer, and Background Check — so you only assess what you've actually seen. Scores accumulate into a risk tier: LOW, MODERATE, HIGH, or CRITICAL."),
+
+      sectionHead("Single Assessor Workflow"),
+      ol(
+        li("Click New Assessment in the header."),
+        li("Enter the candidate's name, applied role, your name, and today's date."),
+        li("Score only the categories you can evaluate. Leave everything else at \"Not Assessed / N/A\" — blank is not the same as clean."),
+        li("Add evidence notes in the text field under each category."),
+        li("Click Copy Review Link to copy a URL encoding your full assessment. Share this link with the panel coordinator.")
+      ),
+
+      sectionHead("Panel Review Workflow"),
+      para("Use this when multiple people assess the same candidate — e.g., a recruiter handles Prescreen, a technical interviewer handles Interview, and a hiring manager handles Offer. Each scores what they saw, then a coordinator combines the results."),
+      ol(
+        li("Each interviewer completes their own assessment and clicks Copy Review Link."),
+        li("The coordinator clicks Panel View in the header."),
+        li("Paste each reviewer's link (or just the code portion) into the import box and click Add Review."),
+        li("The panel URL in the browser address bar updates automatically — bookmark or copy it as the shareable aggregate link.")
+      ),
+
+      sectionHead("Reading the Panel View"),
+      para("The gauge ring shows the composite panel score: the sum of per-category averages across all reviewers who assessed each category. Unassessed categories contribute nothing."),
+      para("The reviewer table shows each person's score as score\u00a0/\u00a0max-they-assessed so different coverage levels are comparable."),
+      para("Each category card shows one of four states based on how many reviewers assessed it and whether they agreed:"),
+      ul(
+        li("Dimmed card — no reviewers assessed this category."),
+        li("Single bar, \"(1 reviewer)\" — only one person assessed it; their score is shown directly."),
+        li(e("span",null,tag("MODERATE SPREAD","#fbbf24"),"Two or more reviewers assessed it; scores diverge somewhat. Individual bars shown.")),
+        li(e("span",null,tag("HIGH DISAGREEMENT \u26a0","#f87171"),"Significant divergence — reviewers saw very different things. Red border, individual bars shown. Discuss before deciding."))
+      ),
+
+      sectionHead("A Note on \"Not Assessed\""),
+      e("div",{style:{background:"#1e293b",border:"1px solid #334155",borderRadius:8,padding:"12px 16px",fontSize:13,color:"#cbd5e1",lineHeight:1.7}},"Leaving a category at \"Not Assessed / N/A\" means you didn\u2019t evaluate it \u2014 not that you found no risk. The panel aggregate never treats a blank as clean. Only categories you explicitly score are included in the average."),
+
+      e("div",{style:{marginTop:24,textAlign:"right"}},
+        e("button",{onClick:onClose,style:{padding:"8px 20px",borderRadius:6,border:"none",background:"#1e40af",color:"#fff",cursor:"pointer",fontSize:13,fontWeight:600}},"Got it")
+      )
+    )
+  );
+}
+
+// --- Panel components ---
+
+function PanelImport({panelInput,setPanelInput,panelInputError,setPanelInputError,panelReviews,onAddReview,onRemoveReview}){
+  function handleAdd(){
+    var decoded=decodeReview(panelInput);
+    if(!decoded){setPanelInputError("Invalid review code. Paste the full link or the code portion after ?r=");return;}
+    onAddReview(decoded);
+    setPanelInput("");
+    setPanelInputError("");
+  }
+  function handleKey(ev){if(ev.key==="Enter")handleAdd();}
+
+  return e("div",{style:{background:"#0f172a",border:"1px solid #1e293b",borderRadius:10,padding:"20px",marginBottom:24}},
+    e("div",{style:{fontSize:11,fontWeight:700,color:"#64748b",marginBottom:12,textTransform:"uppercase",letterSpacing:"0.07em"}},"Import Reviewer Assessments"),
+    e("div",{style:{display:"flex",gap:10,marginBottom:panelInputError?8:0,flexWrap:"wrap"}},
+      e("input",{type:"text",value:panelInput,onChange:function(ev){setPanelInput(ev.target.value);setPanelInputError("");},onKeyDown:handleKey,placeholder:"Paste a review link or code here\u2026",autoComplete:"off",style:{flex:1,minWidth:220,padding:"8px 14px",borderRadius:6,border:"1px solid "+(panelInputError?"#dc2626":"#334155"),background:"#020617",color:"#e2e8f0",fontSize:14}}),
+      e("button",{onClick:handleAdd,style:{padding:"8px 18px",borderRadius:6,border:"none",background:"#1e40af",color:"#fff",cursor:"pointer",fontSize:13,fontWeight:600,whiteSpace:"nowrap"}},"Add Review")
+    ),
+    panelInputError?e("div",{style:{color:"#f87171",fontSize:12,marginBottom:10}},panelInputError):null,
+    panelReviews.length>0?e("div",{style:{display:"flex",flexWrap:"wrap",gap:8,marginTop:panelInputError?0:12}},
+      panelReviews.map(function(r,i){
+        var label=r.assessor||r.name||("Reviewer "+(i+1));
+        return e("div",{key:i,style:{display:"flex",alignItems:"center",gap:6,padding:"4px 10px 4px 14px",borderRadius:20,background:"#1e293b",border:"1px solid #334155",fontSize:12,color:"#e2e8f0"}},
+          e("span",null,label),
+          e("button",{onClick:function(){onRemoveReview(i);},style:{background:"none",border:"none",color:"#64748b",cursor:"pointer",fontSize:15,lineHeight:1,padding:"0 2px"}},"×")
+        );
+      })
+    ):null
+  );
+}
+
+function PanelSummary({agg,reviews}){
+  var displayScore=Math.round(agg.compositeScore);
+  var tier=getRiskTier(displayScore);
+  return e("div",{style:{display:"grid",gridTemplateColumns:"auto 1fr auto",gap:32,alignItems:"center",background:"linear-gradient(135deg, "+tier.bg+"11, "+tier.bg+"08)",border:"1px solid "+tier.color+"33",borderRadius:14,padding:"20px 28px",marginBottom:24}},
+    e(GaugeRing,{score:displayScore,max:agg.compositeMax}),
+    e("div",null,
+      e("div",{style:{display:"flex",alignItems:"center",gap:12,marginBottom:6}},
+        e("span",{style:{display:"inline-block",padding:"4px 14px",borderRadius:20,background:tier.color,color:"#fff",fontSize:13,fontWeight:800,letterSpacing:"0.05em"}},tier.level+" RISK"),
+        e("span",{style:{fontSize:14,color:"#94a3b8",fontWeight:500}},agg.reviewCount+" reviewer"+(agg.reviewCount!==1?"s":""))
+      ),
+      e("p",{style:{fontSize:14,color:"#cbd5e1",lineHeight:1.5}},tier.action),
+      e("div",{style:{display:"flex",gap:8,flexWrap:"wrap",marginTop:10}},
+        reviews.map(function(r,i){
+          var t=getReviewerTotal(r);
+          return e("span",{key:i,style:{fontSize:12,padding:"2px 10px",borderRadius:20,background:"#1e293b",border:"1px solid #334155",color:"#94a3b8"}},
+            (r.assessor||r.name||("Reviewer "+(i+1)))+" \u00b7 "+t.score+"/"+t.maxPossible
+          );
+        })
+      )
+    ),
+    e("div",{style:{textAlign:"center",minWidth:80}},
+      e("div",{style:{fontSize:11,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em",fontWeight:600,marginBottom:4}},"Panel Score"),
+      e("div",{style:{fontSize:32,fontWeight:900,color:tier.color}},displayScore),
+      e("div",{style:{fontSize:11,color:"#64748b"}},"/ "+agg.compositeMax)
+    )
+  );
+}
+
+function ReviewerTable({reviews,onRemoveReview}){
+  var headers=["Assessor","Candidate","Coverage","Score","Tier",""];
+  return e("div",{style:{background:"#0f172a",border:"1px solid #1e293b",borderRadius:10,marginBottom:24,overflow:"hidden"}},
+    e("div",{style:{padding:"10px 16px",borderBottom:"1px solid #1e293b",fontSize:11,fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.07em"}},"Individual Reviewers"),
+    e("div",{style:{overflowX:"auto"}},
+      e("table",{style:{width:"100%",borderCollapse:"collapse",fontSize:13}},
+        e("thead",null,
+          e("tr",{style:{borderBottom:"1px solid #1e293b"}},
+            headers.map(function(h){return e("th",{key:h,style:{padding:"8px 16px",textAlign:"left",fontSize:11,color:"#64748b",fontWeight:600,textTransform:"uppercase",letterSpacing:"0.06em",whiteSpace:"nowrap"}},h);})
+          )
+        ),
+        e("tbody",null,
+          reviews.map(function(r,i){
+            var t=getReviewerTotal(r);
+            var pct=t.maxPossible>0?Math.round((t.score/t.maxPossible)*100):0;
+            var tier=getRiskTier(t.score);
+            return e("tr",{key:i,style:{borderBottom:"1px solid #0a1020"}},
+              e("td",{style:{padding:"10px 16px",color:"#e2e8f0",fontWeight:600}},r.assessor||"\u2014"),
+              e("td",{style:{padding:"10px 16px",color:"#94a3b8"}},r.name||"\u2014"),
+              e("td",{style:{padding:"10px 16px",color:"#64748b",whiteSpace:"nowrap"}},t.score+"/"+t.maxPossible+" pts ("+pct+"%)"),
+              e("td",{style:{padding:"10px 16px"}},
+                e("div",{style:{display:"flex",alignItems:"center",gap:8}},
+                  e("div",{style:{width:60,height:6,borderRadius:3,background:"#1e293b",overflow:"hidden"}},
+                    e("div",{style:{width:pct+"%",height:"100%",background:tier.color,borderRadius:3}})
+                  ),
+                  e("span",{style:{fontSize:12,color:"#94a3b8"}},pct+"%")
+                )
+              ),
+              e("td",{style:{padding:"10px 16px"}},
+                e("span",{style:{fontSize:11,fontWeight:700,color:tier.color,padding:"2px 8px",borderRadius:12,background:tier.color+"22",border:"1px solid "+tier.color+"44"}},tier.level)
+              ),
+              e("td",{className:"no-print",style:{padding:"10px 16px",textAlign:"right"}},
+                e("button",{onClick:function(){onRemoveReview(i);},style:{background:"none",border:"none",color:"#475569",cursor:"pointer",fontSize:18,lineHeight:1}},"×")
+              )
+            );
+          })
+        )
+      )
+    )
+  );
+}
+
+function PanelCategoryCard({cat,aggCat,reviewCount}){
+  var n=aggCat.assessorCount;
+
+  // No one assessed this category
+  if(n===0){
+    return e("div",{style:{background:"#0f172a",border:"1px solid #1e293b",borderRadius:10,padding:"16px 18px",opacity:0.35,display:"flex",flexDirection:"column",gap:8}},
+      e("div",{style:{fontSize:14,fontWeight:700,color:"#e2e8f0"}},cat.name),
+      e("div",{style:{fontSize:11,color:"#64748b"}},cat.stage+" \u00b7 "+cat.description),
+      e("div",{style:{fontSize:12,color:"#475569",marginTop:4}},"No reviewers assessed this category")
+    );
+  }
+
+  var avgScore=Math.round(aggCat.avg);
+  var avgPct=cat.max>0?aggCat.avg/cat.max:0;
+  var barColor=avgPct>=0.8?"#dc2626":avgPct>=0.5?"#ca8a04":avgPct>0?"#3b82f6":"#22c55e";
+  var incon=aggCat.inconsistency;
+  var spread=n>=2?(incon>=0.4?"high":incon>=0.2?"moderate":"none"):"none";
+  var borderColor=spread==="high"?"#dc262644":"#1e293b";
+  var showBars=spread==="high"||spread==="moderate";
+
+  return e("div",{style:{background:"#0f172a",border:"1px solid "+borderColor,borderRadius:10,padding:"16px 18px",display:"flex",flexDirection:"column",gap:10}},
+    // Header row
+    e("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}},
+      e("div",null,
+        e("div",{style:{fontSize:14,fontWeight:700,color:"#e2e8f0"}},cat.name),
+        e("div",{style:{fontSize:11,color:"#64748b",marginTop:2}},cat.stage+" \u00b7 "+cat.description)
+      ),
+      e("div",{style:{fontSize:11,color:"#475569",whiteSpace:"nowrap",paddingTop:2}},n+" of "+reviewCount+" reviewed")
+    ),
+
+    // Average bar
+    e(MiniBar,{score:avgScore,max:cat.max,color:barColor}),
+
+    // Stats row
+    n===1
+      ?e("div",{style:{fontSize:11,color:"#475569"}},"(1 reviewer)")
+      :e("div",{style:{display:"flex",alignItems:"center",gap:14,fontSize:11,color:"#64748b",flexWrap:"wrap"}},
+          e("span",null,"Min: "+aggCat.min),
+          e("span",null,"Max: "+aggCat.max),
+          spread==="high"
+            ?e("span",{style:{color:"#f87171",fontWeight:700,letterSpacing:"0.02em"}},"HIGH DISAGREEMENT \u26a0")
+            :spread==="moderate"
+            ?e("span",{style:{color:"#fbbf24",fontWeight:700,letterSpacing:"0.02em"}},"MODERATE SPREAD")
+            :null
+        ),
+
+    // Per-reviewer breakdown (only when spread is notable)
+    showBars?e("div",{style:{display:"flex",flexDirection:"column",gap:6,paddingTop:10,borderTop:"1px solid #1e293b"}},
+      aggCat.assessors.map(function(r,i){
+        var rScore=Math.max(0,r.scores[cat.id]);
+        var rPct=cat.max>0?rScore/cat.max:0;
+        var rColor=rPct>=0.8?"#dc2626":rPct>=0.5?"#ca8a04":rPct>0?"#3b82f6":"#22c55e";
+        var label=r.assessor||r.name||("R"+(i+1));
+        return e("div",{key:i,style:{display:"flex",alignItems:"center",gap:8}},
+          e("span",{style:{fontSize:11,color:"#64748b",minWidth:80,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flexShrink:0}},label),
+          e(MiniBar,{score:rScore,max:cat.max,color:rColor})
+        );
+      })
+    ):null
+  );
+}
+
+function PanelView({panelReviews,panelInput,setPanelInput,panelInputError,setPanelInputError,onAddReview,onRemoveReview,panelSelectedStage,setPanelSelectedStage}){
+  var agg=panelReviews.length>0?aggregateReviews(panelReviews):null;
+  var visibleCategories=panelSelectedStage==="all"?CATEGORIES:CATEGORIES.filter(function(c){return c.filterStages.includes(panelSelectedStage);});
+  return e("div",null,
+    e(PanelImport,{panelInput:panelInput,setPanelInput:setPanelInput,panelInputError:panelInputError,setPanelInputError:setPanelInputError,panelReviews:panelReviews,onAddReview:onAddReview,onRemoveReview:onRemoveReview}),
+    agg?e("div",null,
+      e(PanelSummary,{agg:agg,reviews:panelReviews}),
+      e(ReviewerTable,{reviews:panelReviews,onRemoveReview:onRemoveReview}),
+      e("div",{className:"no-print",style:{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}},
+        [["all","All Stages"],["prescreen","Prescreen"],["interview","Interview"],["offer","Offer"],["background","Background Check"]].map(function(pair){
+          var val=pair[0],label=pair[1];
+          return e("button",{key:val,onClick:function(){setPanelSelectedStage(val);},style:{padding:"6px 14px",borderRadius:6,border:"1px solid #334155",background:panelSelectedStage===val?"#1e40af":"#0f172a",color:panelSelectedStage===val?"#fff":"#94a3b8",cursor:"pointer",fontSize:13,fontWeight:600,transition:"all 0.15s"}},label);
+        })
+      ),
+      e("div",{style:{display:"grid",gridTemplateColumns:"repeat(auto-fill, minmax(380px, 1fr))",gap:14}},
+        visibleCategories.map(function(cat){
+          return e(PanelCategoryCard,{key:cat.id,cat:cat,aggCat:agg.perCategory[cat.id],reviewCount:agg.reviewCount});
+        })
+      )
+    ):e("div",{style:{textAlign:"center",padding:"60px 32px",color:"#475569",fontSize:14}},"Paste a reviewer\u2019s link above to begin building the panel.")
+  );
+}
+
+// --- Main app ---
+
 function App(){
   var modeState=useState("example"), mode=modeState[0], setMode=modeState[1];
   var scState=useState(Object.assign({},EXAMPLE_SCORES)), scores=scState[0];
@@ -145,10 +462,33 @@ function App(){
   var assessorState=useState(""), assessor=assessorState[0], setAssessor=assessorState[1];
   var assessDateState=useState(new Date().toISOString().split('T')[0]), assessDate=assessDateState[0], setAssessDate=assessDateState[1];
 
+  var panelReviewsState=useState([]), panelReviews=panelReviewsState[0], setPanelReviews=panelReviewsState[1];
+  var panelInputState=useState(""), panelInput=panelInputState[0], setPanelInput=panelInputState[1];
+  var panelInputErrorState=useState(""), panelInputError=panelInputErrorState[0], setPanelInputError=panelInputErrorState[1];
+  var panelStageState=useState("all"), panelSelectedStage=panelStageState[0], setPanelSelectedStage=panelStageState[1];
+  var showInstrState=useState(false), showInstructions=showInstrState[0], setShowInstructions=showInstrState[1];
+
+  // On mount: read ?r= params and load panel if present
+  useEffect(function(){
+    var codes=new URLSearchParams(window.location.search).getAll('r');
+    var decoded=codes.map(decodeReview).filter(Boolean);
+    if(decoded.length>0){setPanelReviews(decoded);setMode('panel');}
+  },[]);
+
+  // Sync panel reviews → URL
+  useEffect(function(){
+    if(mode!=='panel'){return;}
+    if(panelReviews.length===0){window.history.replaceState(null,'',window.location.pathname);return;}
+    var params=new URLSearchParams();
+    panelReviews.forEach(function(r){
+      params.append('r',encodeReview({v:1,n:r.name,ro:r.role,a:r.assessor,d:r.date,s:compactScores(r.scores)}));
+    });
+    window.history.replaceState(null,'',window.location.pathname+'?'+params.toString());
+  },[panelReviews,mode]);
+
   var activeScores=mode==="example"?scores:blankScores;
   var isExample=mode==="example";
   var totalScore=0; Object.keys(activeScores).forEach(function(k){totalScore+=Math.max(0,activeScores[k]);});
-  var maxScore=0; CATEGORIES.forEach(function(c){maxScore+=c.max;});
   var tier=getRiskTier(totalScore);
   var flagsHit=CATEGORIES.filter(function(c){return activeScores[c.id]>0;}).length;
   var visibleCategories=selectedStage==="all"?CATEGORIES:CATEGORIES.filter(function(c){return c.filterStages.includes(selectedStage);});
@@ -165,8 +505,23 @@ function App(){
     setCandidateName(""); setCandidateRole("");
     setAssessor(""); setAssessDate(new Date().toISOString().split('T')[0]);
   }
+  function handleCopyReviewLink(){
+    var payload={v:1,n:candidateName,ro:candidateRole,a:assessor,d:assessDate,s:compactScores(blankScores)};
+    var code=encodeReview(payload);
+    var baseUrl=window.location.href.split('?')[0];
+    var url=baseUrl+'?r='+code;
+    if(navigator.clipboard&&navigator.clipboard.writeText){
+      navigator.clipboard.writeText(url).catch(function(){prompt("Copy this review link:",url);});
+    } else {
+      prompt("Copy this review link:",url);
+    }
+  }
+  function handleAddReview(review){setPanelReviews(function(prev){return prev.concat([review]);});}
+  function handleRemoveReview(idx){setPanelReviews(function(prev){return prev.filter(function(_,i){return i!==idx;});});}
 
   return e("div",{style:{minHeight:"100vh"}},
+    showInstructions?e(InstructionsModal,{onClose:function(){setShowInstructions(false);}}):null,
+
     // Header
     e("div",{style:{background:"linear-gradient(135deg, #0f172a 0%, #1e293b 100%)",borderBottom:"1px solid #1e293b",padding:"24px 32px"}},
       e("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:16}},
@@ -177,101 +532,108 @@ function App(){
             e("p",{style:{fontSize:12,color:"#64748b"}},"Security & HR \u00b7 Confidential \u00b7 V2")
           )
         ),
-        e("div",{className:"no-print",style:{display:"flex",gap:8}},
-          e("button",{onClick:function(){setMode("example")},style:{padding:"8px 16px",borderRadius:6,border:"1px solid #334155",background:mode==="example"?"#1e40af":"#0f172a",color:mode==="example"?"#fff":"#94a3b8",cursor:"pointer",fontSize:13,fontWeight:600,transition:"all 0.15s"}},"Example: Flagged Candidate"),
-          e("button",{onClick:function(){setMode("assess")},style:{padding:"8px 16px",borderRadius:6,border:"1px solid #334155",background:mode==="assess"?"#1e40af":"#0f172a",color:mode==="assess"?"#fff":"#94a3b8",cursor:"pointer",fontSize:13,fontWeight:600,transition:"all 0.15s"}},"New Assessment"),
-          e("button",{onClick:function(){window.print()},style:{padding:"8px 16px",borderRadius:6,border:"1px solid #334155",background:"#0f172a",color:"#94a3b8",cursor:"pointer",fontSize:13,fontWeight:600,transition:"all 0.15s"}},"Print / Export PDF")
+        e("div",{className:"no-print",style:{display:"flex",gap:8,flexWrap:"wrap"}},
+          e("button",{onClick:function(){setMode("example");},style:{padding:"8px 16px",borderRadius:6,border:"1px solid #334155",background:mode==="example"?"#1e40af":"#0f172a",color:mode==="example"?"#fff":"#94a3b8",cursor:"pointer",fontSize:13,fontWeight:600,transition:"all 0.15s"}},"Example: Flagged Candidate"),
+          e("button",{onClick:function(){setMode("assess");},style:{padding:"8px 16px",borderRadius:6,border:"1px solid #334155",background:mode==="assess"?"#1e40af":"#0f172a",color:mode==="assess"?"#fff":"#94a3b8",cursor:"pointer",fontSize:13,fontWeight:600,transition:"all 0.15s"}},"New Assessment"),
+          e("button",{onClick:function(){setMode("panel");},style:{padding:"8px 16px",borderRadius:6,border:"1px solid #334155",background:mode==="panel"?"#1e40af":"#0f172a",color:mode==="panel"?"#fff":"#94a3b8",cursor:"pointer",fontSize:13,fontWeight:600,transition:"all 0.15s"}},"Panel View"),
+          e("button",{onClick:function(){setShowInstructions(true);},style:{padding:"8px 16px",borderRadius:6,border:"1px solid #334155",background:"#0f172a",color:"#94a3b8",cursor:"pointer",fontSize:13,fontWeight:600,transition:"all 0.15s"}},"How to Use"),
+          e("button",{onClick:function(){window.print();},style:{padding:"8px 16px",borderRadius:6,border:"1px solid #334155",background:"#0f172a",color:"#94a3b8",cursor:"pointer",fontSize:13,fontWeight:600,transition:"all 0.15s"}},"Print / Export PDF")
         )
       )
     ),
 
     e("div",{style:{padding:"24px 32px",maxWidth:1400,margin:"0 auto"}},
-      // Risk Summary
-      e("div",{style:{display:"grid",gridTemplateColumns:"auto 1fr auto",gap:32,alignItems:"center",background:"linear-gradient(135deg, "+tier.bg+"11, "+tier.bg+"08)",border:"1px solid "+tier.color+"33",borderRadius:14,padding:"20px 28px",marginBottom:28}},
-        e(GaugeRing,{score:totalScore,max:maxScore}),
-        e("div",null,
-          e("div",{style:{display:"flex",alignItems:"center",gap:12,marginBottom:6}},
-            e("span",{style:{display:"inline-block",padding:"4px 14px",borderRadius:20,background:tier.color,color:"#fff",fontSize:13,fontWeight:800,letterSpacing:"0.05em"}},tier.level+" RISK"),
-            mode==="example"?e("span",{style:{fontSize:14,color:"#94a3b8",fontWeight:500}},"Flagged Candidate \u00b7 Senior Software Engineer"):
-              candidateName?e("span",{style:{fontSize:14,color:"#94a3b8",fontWeight:500}},candidateName+(candidateRole?" \u00b7 "+candidateRole:"")):null
+      mode==="panel"
+        ?e(PanelView,{panelReviews:panelReviews,panelInput:panelInput,setPanelInput:setPanelInput,panelInputError:panelInputError,setPanelInputError:setPanelInputError,onAddReview:handleAddReview,onRemoveReview:handleRemoveReview,panelSelectedStage:panelSelectedStage,setPanelSelectedStage:setPanelSelectedStage})
+        :e("div",null,
+
+          // Risk summary
+          e("div",{style:{display:"grid",gridTemplateColumns:"auto 1fr auto",gap:32,alignItems:"center",background:"linear-gradient(135deg, "+tier.bg+"11, "+tier.bg+"08)",border:"1px solid "+tier.color+"33",borderRadius:14,padding:"20px 28px",marginBottom:28}},
+            e(GaugeRing,{score:totalScore,max:CATEGORY_MAX}),
+            e("div",null,
+              e("div",{style:{display:"flex",alignItems:"center",gap:12,marginBottom:6}},
+                e("span",{style:{display:"inline-block",padding:"4px 14px",borderRadius:20,background:tier.color,color:"#fff",fontSize:13,fontWeight:800,letterSpacing:"0.05em"}},tier.level+" RISK"),
+                mode==="example"?e("span",{style:{fontSize:14,color:"#94a3b8",fontWeight:500}},"Flagged Candidate \u00b7 Senior Software Engineer"):
+                  candidateName?e("span",{style:{fontSize:14,color:"#94a3b8",fontWeight:500}},candidateName+(candidateRole?" \u00b7 "+candidateRole:"")):null
+              ),
+              e("p",{style:{fontSize:14,color:"#cbd5e1",lineHeight:1.5}},tier.action),
+              mode==="assess"&&(assessor||assessDate)?e("p",{style:{marginTop:6,fontSize:12,color:"#64748b"}},"Assessed by: "+(assessor||"\u2014")+" \u00b7 Date: "+(assessDate||"\u2014")):null,
+              mode==="example"?e("p",{style:{marginTop:8,fontSize:12,color:"#64748b",lineHeight:1.4}},"This example shows a confirmed DPRK IT worker fraud attempt with red flags across all protocol stages. The candidate scored 169/196 \u2014 near-maximum risk across every category."):null
+            ),
+            e("div",{style:{textAlign:"center"}},
+              e("div",{style:{fontSize:11,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em",fontWeight:600}},"Flags Hit"),
+              e("div",{style:{fontSize:32,fontWeight:900,color:tier.color}},flagsHit),
+              e("div",{style:{fontSize:11,color:"#64748b"}},"of "+CATEGORIES.length)
+            )
           ),
-          e("p",{style:{fontSize:14,color:"#cbd5e1",lineHeight:1.5}},tier.action),
-          mode==="assess"&&(assessor||assessDate)?e("p",{style:{marginTop:6,fontSize:12,color:"#64748b"}},"Assessed by: "+(assessor||"\u2014")+" \u00b7 Date: "+(assessDate||"\u2014")):null,
-          mode==="example"?e("p",{style:{marginTop:8,fontSize:12,color:"#64748b",lineHeight:1.4}},"This example shows a confirmed DPRK IT worker fraud attempt with red flags across all protocol stages. The candidate scored 169/196 \u2014 near-maximum risk across every category."):null
-        ),
-        e("div",{style:{textAlign:"center"}},
-          e("div",{style:{fontSize:11,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em",fontWeight:600}},"Flags Hit"),
-          e("div",{style:{fontSize:32,fontWeight:900,color:tier.color}},flagsHit),
-          e("div",{style:{fontSize:11,color:"#64748b"}},"of "+CATEGORIES.length)
+
+          // Assess mode inputs
+          mode==="assess"?e("div",{style:{display:"flex",gap:12,marginBottom:20,flexWrap:"wrap",alignItems:"center"}},
+            e("input",{type:"text",placeholder:"Candidate name",value:candidateName,onChange:function(ev){setCandidateName(ev.target.value);},maxLength:200,autoComplete:"off",style:{padding:"8px 14px",borderRadius:6,border:"1px solid #334155",background:"#0f172a",color:"#e2e8f0",fontSize:14,width:220}}),
+            e("input",{type:"text",placeholder:"Applied role",value:candidateRole,onChange:function(ev){setCandidateRole(ev.target.value);},maxLength:200,autoComplete:"off",style:{padding:"8px 14px",borderRadius:6,border:"1px solid #334155",background:"#0f172a",color:"#e2e8f0",fontSize:14,width:220}}),
+            e("input",{type:"text",placeholder:"Assessor name",value:assessor,onChange:function(ev){setAssessor(ev.target.value);},maxLength:200,autoComplete:"off",style:{padding:"8px 14px",borderRadius:6,border:"1px solid #334155",background:"#0f172a",color:"#e2e8f0",fontSize:14,width:180}}),
+            e("input",{type:"date",value:assessDate,onChange:function(ev){setAssessDate(ev.target.value);},style:{padding:"8px 14px",borderRadius:6,border:"1px solid #334155",background:"#0f172a",color:"#e2e8f0",fontSize:14,width:160}}),
+            e("button",{onClick:handleReset,className:"no-print",style:{padding:"8px 16px",borderRadius:6,border:"1px solid #334155",background:"#0f172a",color:"#94a3b8",cursor:"pointer",fontSize:13,fontWeight:600}},"Reset All"),
+            e("button",{onClick:handleCopyReviewLink,className:"no-print",style:{padding:"8px 16px",borderRadius:6,border:"1px solid #334155",background:"#0f172a",color:"#60a5fa",cursor:"pointer",fontSize:13,fontWeight:600}},"Copy Review Link")
+          ):null,
+
+          // Tier legend
+          e("div",{className:"no-print",style:{display:"grid",gridTemplateColumns:"repeat(4, 1fr)",gap:10,marginBottom:24}},
+            RISK_TIERS.map(function(t,i){
+              var prevMax=i>0?RISK_TIERS[i-1].max:-1;
+              var active=totalScore<=t.max&&totalScore>prevMax;
+              return e("div",{key:t.level,style:{padding:"10px 14px",borderRadius:8,border:"1px solid "+t.color+"33",background:active?t.color+"22":"#0f172a",opacity:active?1:0.5,transition:"all 0.3s ease"}},
+                e("div",{style:{fontSize:11,fontWeight:800,color:t.color,letterSpacing:"0.06em"}},t.level),
+                e("div",{style:{fontSize:12,color:"#64748b",marginTop:2}},t.max<999?"0\u2013"+t.max:"121+"," pts")
+              );
+            })
+          ),
+
+          // Stage filter tabs
+          e("div",{className:"no-print",style:{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}},
+            [["all","All Stages"],["prescreen","Prescreen"],["interview","Interview"],["offer","Offer"],["background","Background Check"]].map(function(pair){
+              var val=pair[0],label=pair[1];
+              return e("button",{key:val,onClick:function(){setSelectedStage(val);},style:{padding:"6px 14px",borderRadius:6,border:"1px solid #334155",background:selectedStage===val?"#1e40af":"#0f172a",color:selectedStage===val?"#fff":"#94a3b8",cursor:"pointer",fontSize:13,fontWeight:600,transition:"all 0.15s"}},label);
+            })
+          ),
+
+          // Category cards
+          e("div",{style:{display:"grid",gridTemplateColumns:"repeat(auto-fill, minmax(380px, 1fr))",gap:14}},
+            visibleCategories.map(function(cat){
+              return e(CategoryCard,{key:cat.id,cat:cat,score:activeScores[cat.id],onChange:handleChange,isExample:isExample,note:notes[cat.id],onNoteChange:handleNoteChange});
+            })
+          ),
+
+          // Example case detail
+          mode==="example"?e("div",{style:{marginTop:28,background:"#0f172a",border:"1px solid #1e293b",borderRadius:12,padding:24}},
+            e("h3",{style:{marginBottom:16,fontSize:16,fontWeight:700,color:"#f1f5f9"}},"Case Summary: Flagged Candidate \u2014 Confirmed DPRK IT Worker Fraud"),
+            e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,fontSize:13,color:"#94a3b8",lineHeight:1.6}},
+              e("div",null,
+                e("div",{style:{fontWeight:700,color:"#e2e8f0",marginBottom:4}},"Key Indicators"),
+                e("ul",{style:{margin:0,paddingLeft:18}},
+                  e("li",null,"Zero online footprint for a claimed 10+ year senior engineer"),
+                  e("li",null,"All three employers (SoftXPro, STS Software, SDLC Corp) are unverifiable"),
+                  e("li",null,"Resume language precisely mirrors the job posting"),
+                  e("li",null,"California phone number for a Canadian-resident candidate; disconnected"),
+                  e("li",null,"E-verify failed; notarized substitute ID provided"),
+                  e("li",null,"Response timing consistent with DPRK (UTC+8:30) timezone despite claimed Canada residency"),
+                  e("li",null,"Phone number matches contact details of a previously flagged applicant cluster")
+                )
+              ),
+              e("div",null,
+                e("div",{style:{fontWeight:700,color:"#e2e8f0",marginBottom:4}},"Decisive Evidence"),
+                e("ul",{style:{margin:0,paddingLeft:18}},
+                  e("li",null,"Onboarding photo is a different person than who interviewed"),
+                  e("li",null,"Company laptop received but never powered on (MDM confirms)"),
+                  e("li",null,"Car accident in Nova Scotia, 1,700 km from stated address"),
+                  e("li",null,"Anomalously low salary, zero negotiation, instant acceptance"),
+                  e("li",null,"Pattern matches FBI IC3 + RCMP advisories on DPRK IT worker TTPs")
+                )
+              )
+            ),
+            e("div",{style:{marginTop:16,padding:"12px 16px",borderRadius:8,background:"#450a0a",border:"1px solid #dc2626",fontSize:13,color:"#fca5a5",fontWeight:600}},"VERDICT: DO NOT ONBOARD. Terminate all processes. Preserve evidence. Report to FBI IC3 and RCMP. Engage Legal before any communication with the candidate. Treat issued hardware as compromised.")
+          ):null
         )
-      ),
-
-      // Name/role/assessor/date inputs for assess mode
-      mode==="assess"?e("div",{style:{display:"flex",gap:12,marginBottom:20,flexWrap:"wrap",alignItems:"center"}},
-        e("input",{type:"text",placeholder:"Candidate name",value:candidateName,onChange:function(ev){setCandidateName(ev.target.value)},maxLength:200,autoComplete:"off",style:{padding:"8px 14px",borderRadius:6,border:"1px solid #334155",background:"#0f172a",color:"#e2e8f0",fontSize:14,width:220}}),
-        e("input",{type:"text",placeholder:"Applied role",value:candidateRole,onChange:function(ev){setCandidateRole(ev.target.value)},maxLength:200,autoComplete:"off",style:{padding:"8px 14px",borderRadius:6,border:"1px solid #334155",background:"#0f172a",color:"#e2e8f0",fontSize:14,width:220}}),
-        e("input",{type:"text",placeholder:"Assessor name",value:assessor,onChange:function(ev){setAssessor(ev.target.value)},maxLength:200,autoComplete:"off",style:{padding:"8px 14px",borderRadius:6,border:"1px solid #334155",background:"#0f172a",color:"#e2e8f0",fontSize:14,width:180}}),
-        e("input",{type:"date",value:assessDate,onChange:function(ev){setAssessDate(ev.target.value)},style:{padding:"8px 14px",borderRadius:6,border:"1px solid #334155",background:"#0f172a",color:"#e2e8f0",fontSize:14,width:160}}),
-        e("button",{onClick:handleReset,className:"no-print",style:{padding:"8px 16px",borderRadius:6,border:"1px solid #334155",background:"#0f172a",color:"#94a3b8",cursor:"pointer",fontSize:13,fontWeight:600}},"Reset All")
-      ):null,
-
-      // Tier legend
-      e("div",{className:"no-print",style:{display:"grid",gridTemplateColumns:"repeat(4, 1fr)",gap:10,marginBottom:24}},
-        RISK_TIERS.map(function(t,i){
-          var prevMax=i>0?RISK_TIERS[i-1].max:-1;
-          var active=totalScore<=t.max&&totalScore>prevMax;
-          return e("div",{key:t.level,style:{padding:"10px 14px",borderRadius:8,border:"1px solid "+t.color+"33",background:active?t.color+"22":"#0f172a",opacity:active?1:0.5,transition:"all 0.3s ease"}},
-            e("div",{style:{fontSize:11,fontWeight:800,color:t.color,letterSpacing:"0.06em"}},t.level),
-            e("div",{style:{fontSize:12,color:"#64748b",marginTop:2}},t.max<999?"0\u2013"+t.max:"121+"," pts")
-          );
-        })
-      ),
-
-      // Stage filter tabs
-      e("div",{className:"no-print",style:{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}},
-        [["all","All Stages"],["prescreen","Prescreen"],["interview","Interview"],["offer","Offer"],["background","Background Check"]].map(function(pair){
-          var val=pair[0], label=pair[1];
-          return e("button",{key:val,onClick:function(){setSelectedStage(val)},style:{padding:"6px 14px",borderRadius:6,border:"1px solid #334155",background:selectedStage===val?"#1e40af":"#0f172a",color:selectedStage===val?"#fff":"#94a3b8",cursor:"pointer",fontSize:13,fontWeight:600,transition:"all 0.15s"}},label);
-        })
-      ),
-
-      // Category cards
-      e("div",{style:{display:"grid",gridTemplateColumns:"repeat(auto-fill, minmax(380px, 1fr))",gap:14}},
-        visibleCategories.map(function(cat){
-          return e(CategoryCard,{key:cat.id,cat:cat,score:activeScores[cat.id],onChange:handleChange,isExample:isExample,note:notes[cat.id],onNoteChange:handleNoteChange});
-        })
-      ),
-
-      // Example case detail
-      mode==="example"?e("div",{style:{marginTop:28,background:"#0f172a",border:"1px solid #1e293b",borderRadius:12,padding:24}},
-        e("h3",{style:{marginBottom:16,fontSize:16,fontWeight:700,color:"#f1f5f9"}},"Case Summary: Flagged Candidate \u2014 Confirmed DPRK IT Worker Fraud"),
-        e("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,fontSize:13,color:"#94a3b8",lineHeight:1.6}},
-          e("div",null,
-            e("div",{style:{fontWeight:700,color:"#e2e8f0",marginBottom:4}},"Key Indicators"),
-            e("ul",{style:{margin:0,paddingLeft:18}},
-              e("li",null,"Zero online footprint for a claimed 10+ year senior engineer"),
-              e("li",null,"All three employers (SoftXPro, STS Software, SDLC Corp) are unverifiable"),
-              e("li",null,"Resume language precisely mirrors the job posting"),
-              e("li",null,"California phone number for a Canadian-resident candidate; disconnected"),
-              e("li",null,"E-verify failed; notarized substitute ID provided"),
-              e("li",null,"Response timing consistent with DPRK (UTC+8:30) timezone despite claimed Canada residency"),
-              e("li",null,"Phone number matches contact details of a previously flagged applicant cluster")
-            )
-          ),
-          e("div",null,
-            e("div",{style:{fontWeight:700,color:"#e2e8f0",marginBottom:4}},"Decisive Evidence"),
-            e("ul",{style:{margin:0,paddingLeft:18}},
-              e("li",null,"Onboarding photo is a different person than who interviewed"),
-              e("li",null,"Company laptop received but never powered on (MDM confirms)"),
-              e("li",null,"Car accident in Nova Scotia, 1,700 km from stated address"),
-              e("li",null,"Anomalously low salary, zero negotiation, instant acceptance"),
-              e("li",null,"Pattern matches FBI IC3 + RCMP advisories on DPRK IT worker TTPs")
-            )
-          )
-        ),
-        e("div",{style:{marginTop:16,padding:"12px 16px",borderRadius:8,background:"#450a0a",border:"1px solid #dc2626",fontSize:13,color:"#fca5a5",fontWeight:600}},"VERDICT: DO NOT ONBOARD. Terminate all processes. Preserve evidence. Report to FBI IC3 and RCMP. Engage Legal before any communication with the candidate. Treat issued hardware as compromised.")
-      ):null,
-
     )
   );
 }
