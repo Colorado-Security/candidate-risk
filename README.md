@@ -7,6 +7,10 @@ V1: Ralph Forsythe, based upon the work of Joey Stanford | V2: Joey Stanford, CI
 
 ---
 
+![Candidate Fraud Risk Assessment — Example: Flagged Candidate showing a CRITICAL RISK score of 169/196 with 16 flags hit](Screenshot.png)
+
+---
+
 ## Usage
 
 Open `Candidate_Risk_Dashboard.html` in any browser. No server, no install, no build step required.
