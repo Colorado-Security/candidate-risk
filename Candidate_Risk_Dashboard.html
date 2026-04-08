@@ -8,13 +8,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' https://cdnjs.cloudflare.com/; style-src 'unsafe-inline'; object-src 'none'; base-uri 'self';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' https://cdnjs.cloudflare.com/; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; frame-src 'none'; form-action 'none'; object-src 'none'; base-uri 'self';">
 <meta name="referrer" content="no-referrer">
 <meta name="robots" content="noindex, nofollow, noarchive, nocache">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate, max-age=0">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta http-equiv="Permissions-Policy" content="geolocation=(), microphone=(), camera=(), payment=(), usb=()">
+<meta http-equiv="Permissions-Policy" content="geolocation=(), microphone=(), camera=(), payment=(), usb=(), accelerometer=(), gyroscope=(), magnetometer=(), fullscreen=(), midi=(), browsing-topics=()">
 <title>Candidate Fraud Risk Assessment</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js" integrity="sha384-tMH8h3BGESGckSAVGZ82T9n90ztNXxvdwvdM6UoR56cYcf+0iGXBliJ29D+wZ/x8" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js" integrity="sha384-bm7MnzvK++ykSwVJ2tynSE5TRdN+xL418osEVF2DE/L/gfWHj91J2Sphe582B1Bh" crossorigin="anonymous"></script>
@@ -53,16 +53,20 @@ const CATEGORIES = [
     levels:[{score:-1,label:"Not assessed / N/A",desc:"Not evaluated at this stage or not applicable"},{score:0,label:"Clean match",desc:"Active number, matches stated location and identity"},{score:3,label:"Minor mismatch",desc:"Area code doesn't match but number is active"},{score:5,label:"Moderate concern",desc:"VoIP number or different region"},{score:10,label:"Critical mismatch",desc:"Wrong country, disconnected, or swapped without explanation"}]},
   { id:"geo_consistency", name:"Geographic Consistency", max:5, stage:"Prescreen", filterStages:["prescreen"], description:"Location claims, time zone patterns, and contact alignment",
     levels:[{score:-1,label:"Not assessed / N/A",desc:"Not evaluated at this stage or not applicable"},{score:0,label:"Fully consistent",desc:"Address, phone, IP, timestamps, and local knowledge all align with stated location"},{score:3,label:"Minor inconsistency",desc:"One anomaly (odd response times or area code mismatch) with plausible explanation"},{score:5,label:"Significant inconsistency",desc:"Response patterns consistently misalign with stated time zone, or multiple geographic contradictions"}]},
+  { id:"timezone_behavior", name:"Timezone Behavior Patterns", max:10, stage:"Prescreen", filterStages:["prescreen"], description:"Response timing and availability consistency with stated location",
+    levels:[{score:-1,label:"Not assessed / N/A",desc:"Not evaluated at this stage or not applicable"},{score:0,label:"Consistent timezone",desc:"Response times and availability align with stated location and time zone"},{score:3,label:"Minor anomalies",desc:"Occasional off-hours activity; plausibly explained by travel, flexibility, or insomnia"},{score:7,label:"Persistent pattern mismatch",desc:"Consistent activity during business hours of a different timezone than claimed; odd availability windows"},{score:10,label:"DPRK-pattern timezone",desc:"Activity strongly matches UTC+8:30 or another high-risk timezone regardless of claimed location; rapid handoffs suggest shift-based collaborative operation"}]},
+  { id:"account_duplication", name:"Account / Identity Duplication", max:12, stage:"Prescreen", filterStages:["prescreen"], description:"Signs of multiple personas or identity reuse across applications",
+    levels:[{score:-1,label:"Not assessed / N/A",desc:"Not evaluated at this stage or not applicable"},{score:0,label:"Unique identity",desc:"No duplicate applicants or overlapping identities found in ATS or external searches"},{score:4,label:"Near-match found",desc:"Another applicant with very similar profile (name, location, skills) — warrants cross-referencing"},{score:8,label:"Shared contact information",desc:"Phone number or email matches another active applicant; possible alias use"},{score:12,label:"Confirmed multi-persona",desc:"Same individual confirmed across 2+ applicant profiles; identical resume submitted under different names"}]},
   { id:"third_party_handler", name:"Third-Party Handler", max:15, stage:"Prescreen", filterStages:["prescreen"], description:"Is a third party managing logistics, equipment, or communications?",
     levels:[{score:-1,label:"Not assessed / N/A",desc:"Not evaluated at this stage or not applicable"},{score:0,label:"Direct only",desc:"Candidate handles all communication and logistics directly"},{score:5,label:"Recruiter involved",desc:"Recruiter present but candidate handles direct correspondence"},{score:10,label:"Handler manages logistics",desc:"Third party routes most equipment, communication, or payroll"},{score:15,label:"Full intermediary",desc:"All equipment, payroll, and comms through intermediary; candidate rarely communicates directly"}]},
-  { id:"interview_signals", name:"Interview Signals", max:10, stage:"Interview", filterStages:["interview"], description:"AI assistance, video anomalies, scripting, and behavioral red flags",
-    levels:[{score:-1,label:"Not assessed / N/A",desc:"Not evaluated at this stage or not applicable"},{score:0,label:"Clean interview",desc:"Natural, spontaneous responses; good video; no red flags or lag indicators"},{score:3,label:"Minor signals",desc:"Occasional unusual pause, slightly stilted phrasing, or one minor anomaly"},{score:7,label:"Probable assistance",desc:"Noticeable lag pattern, verbatim reading, generic scripted answers, or 1\u20132 moderate behavioral flags"},{score:10,label:"Confirmed assistance or refusal",desc:"Earpiece, second person visible, live AI tool on screen, repeated restart requests, or video refusal"}]},
+  { id:"interview_signals", name:"Interview Signals", max:14, stage:"Interview", filterStages:["interview"], description:"AI assistance, video anomalies, biometric red flags, and scripting signals",
+    levels:[{score:-1,label:"Not assessed / N/A",desc:"Not evaluated at this stage or not applicable"},{score:0,label:"Clean interview",desc:"Natural, spontaneous responses; good video; no red flags or lag indicators"},{score:3,label:"Minor signals",desc:"Occasional unusual pause, slightly stilted phrasing, or one minor anomaly"},{score:7,label:"Probable assistance",desc:"Noticeable lag pattern, verbatim reading, generic scripted answers, or 1\u20132 moderate behavioral flags"},{score:10,label:"Confirmed assistance or refusal",desc:"Earpiece, second person visible, live AI tool on screen, repeated restart requests, or video refusal"},{score:14,label:"AI transcription + biometric flags",desc:"Unauthorized AI note-taker or transcription bot joins call without explanation; candidate face does not match application photo; deepfake or liveness detection failure during video"}]},
   { id:"technical_screen", name:"Technical Screen Signals", max:15, stage:"Interview", filterStages:["interview"], description:"Consistency and authenticity of technical performance",
     levels:[{score:-1,label:"Not assessed / N/A",desc:"Not evaluated at this stage or not applicable"},{score:0,label:"Consistent and explained",desc:"Explains all work clearly; performance consistent across rounds"},{score:5,label:"Minor gaps",desc:"Slight difficulty explaining one approach; modest improvement between rounds"},{score:10,label:"Unexplained work",desc:"Cannot explain code or design choices; dramatic improvement between rounds"},{score:15,label:"Confirmed assistance",desc:"Second screen, timing anomalies, or live AI tool visible during assessment"}]},
-  { id:"reference_integrity", name:"Reference Integrity", max:10, stage:"Interview", filterStages:["interview"], description:"Can references be independently located and verified?",
-    levels:[{score:-1,label:"Not assessed / N/A",desc:"Not evaluated at this stage or not applicable"},{score:0,label:"Fully verifiable",desc:"References independently found; provide specific detailed answers"},{score:3,label:"Partially verifiable",desc:"One reference hard to find independently; answers somewhat vague"},{score:7,label:"Scripted or unavailable",desc:"Cannot be found independently; answers suspiciously identical or rehearsed"},{score:10,label:"Coordinated or fabricated",desc:"References share contact info, refuse contact, or are clearly the same person"}]},
-  { id:"comp_behavior", name:"Compensation Behavior", max:5, stage:"Offer", filterStages:["offer"], description:"Salary expectations and negotiation patterns",
-    levels:[{score:-1,label:"Not assessed / N/A",desc:"Not evaluated at this stage or not applicable"},{score:0,label:"Normal negotiation",desc:"Reasonable expectations, standard back-and-forth"},{score:3,label:"Low expectations",desc:"Below-market ask with minimal negotiation"},{score:5,label:"Instant accept",desc:"Anomalously low comp, zero negotiation, immediate sign"}]},
+  { id:"reference_integrity", name:"Reference Integrity", max:12, stage:"Interview", filterStages:["interview"], description:"Can references be independently located and verified?",
+    levels:[{score:-1,label:"Not assessed / N/A",desc:"Not evaluated at this stage or not applicable"},{score:0,label:"Fully verifiable",desc:"References independently found; provide specific detailed answers"},{score:3,label:"Partially verifiable",desc:"One reference hard to find independently; answers somewhat vague"},{score:7,label:"Scripted or unavailable",desc:"Cannot be found independently; answers suspiciously identical or rehearsed"},{score:10,label:"Coordinated or fabricated",desc:"References share contact info, refuse contact, or are clearly the same person"},{score:12,label:"Confirmed phone duplication",desc:"Two or more references share the same phone number, or all return calls within minutes of each other (coordinated response pattern)"}]},
+  { id:"comp_behavior", name:"Compensation Behavior", max:8, stage:"Offer", filterStages:["offer"], description:"Salary expectations, negotiation patterns, and payment routing at offer stage",
+    levels:[{score:-1,label:"Not assessed / N/A",desc:"Not evaluated at this stage or not applicable"},{score:0,label:"Normal negotiation",desc:"Reasonable expectations, standard back-and-forth"},{score:3,label:"Low expectations",desc:"Below-market ask with minimal negotiation"},{score:5,label:"Instant accept",desc:"Anomalously low comp, zero negotiation, immediate sign"},{score:8,label:"Instant accept + foreign routing",desc:"Anomalously low comp with zero negotiation AND requests payment to foreign account, third-party payroll, or cryptocurrency at offer stage"}]},
   { id:"employer_verification", name:"Employer Verification", max:15, stage:"Offer", filterStages:["offer"], description:"Can stated employers be independently verified?",
     levels:[{score:-1,label:"Not assessed / N/A",desc:"Not evaluated at this stage or not applicable"},{score:0,label:"All verified",desc:"Every employer confirmed via public records or direct contact"},{score:5,label:"Most verified",desc:"One employer difficult to verify but others check out"},{score:8,label:"Some unverifiable",desc:"Multiple employers cannot be independently confirmed"},{score:15,label:"None verifiable",desc:"No employer can be linked to the candidate independently"}]},
   { id:"identity_docs", name:"Identity Documentation", max:15, stage:"Background Check", filterStages:["background"], description:"E-verify, ID checks, and document consistency",
@@ -76,13 +80,13 @@ const CATEGORIES = [
 ];
 
 const RISK_TIERS = [
-  {max:25,level:"LOW",color:"#22c55e",bg:"#f0fdf4",action:"Proceed normally. Standard monitoring."},
-  {max:60,level:"MODERATE",color:"#ca8a04",bg:"#fefce8",action:"Proceed with caution. Additional OSINT verification. Flag for CISO awareness."},
-  {max:100,level:"HIGH",color:"#dc2626",bg:"#fef2f2",action:"Do NOT extend offer without CISO approval. Full OSINT + live ID verification required."},
+  {max:30,level:"LOW",color:"#22c55e",bg:"#f0fdf4",action:"Proceed normally. Standard monitoring."},
+  {max:70,level:"MODERATE",color:"#ca8a04",bg:"#fefce8",action:"Proceed with caution. Additional OSINT verification. Flag for CISO awareness."},
+  {max:120,level:"HIGH",color:"#dc2626",bg:"#fef2f2",action:"Do NOT extend offer without CISO approval. Full OSINT + live ID verification required."},
   {max:999,level:"CRITICAL",color:"#991b1b",bg:"#450a0a",action:"REJECT. CISO + Legal sign-off required. Preserve evidence. Initiate reporting."}
 ];
 
-const EXAMPLE_SCORES = {digital_footprint:20,employer_verification:15,resume_authenticity:10,phone_contact:10,reference_integrity:10,geo_consistency:5,third_party_handler:15,interview_signals:7,technical_screen:10,comp_behavior:5,identity_docs:15,payment_flags:7,hardware_onboarding:10,identity_continuity:15};
+const EXAMPLE_SCORES = {digital_footprint:20,employer_verification:15,resume_authenticity:10,phone_contact:10,reference_integrity:10,geo_consistency:5,timezone_behavior:7,account_duplication:8,third_party_handler:15,interview_signals:7,technical_screen:10,comp_behavior:5,identity_docs:15,payment_flags:7,hardware_onboarding:10,identity_continuity:15};
 
 function getRiskTier(score){ return RISK_TIERS.find(t=>score<=t.max)||RISK_TIERS[RISK_TIERS.length-1]; }
 
@@ -198,7 +202,7 @@ function App(){
           ),
           e("p",{style:{fontSize:14,color:"#cbd5e1",lineHeight:1.5}},tier.action),
           mode==="assess"&&(assessor||assessDate)?e("p",{style:{marginTop:6,fontSize:12,color:"#64748b"}},"Assessed by: "+(assessor||"\u2014")+" \u00b7 Date: "+(assessDate||"\u2014")):null,
-          mode==="example"?e("p",{style:{marginTop:8,fontSize:12,color:"#64748b",lineHeight:1.4}},"This example shows a confirmed DPRK IT worker fraud attempt with red flags across all protocol stages. The candidate scored 154/165 \u2014 near-maximum risk across every category."):null
+          mode==="example"?e("p",{style:{marginTop:8,fontSize:12,color:"#64748b",lineHeight:1.4}},"This example shows a confirmed DPRK IT worker fraud attempt with red flags across all protocol stages. The candidate scored 169/196 \u2014 near-maximum risk across every category."):null
         ),
         e("div",{style:{textAlign:"center"}},
           e("div",{style:{fontSize:11,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em",fontWeight:600}},"Flags Hit"),
@@ -223,7 +227,7 @@ function App(){
           var active=totalScore<=t.max&&totalScore>prevMax;
           return e("div",{key:t.level,style:{padding:"10px 14px",borderRadius:8,border:"1px solid "+t.color+"33",background:active?t.color+"22":"#0f172a",opacity:active?1:0.5,transition:"all 0.3s ease"}},
             e("div",{style:{fontSize:11,fontWeight:800,color:t.color,letterSpacing:"0.06em"}},t.level),
-            e("div",{style:{fontSize:12,color:"#64748b",marginTop:2}},t.max<999?"0\u2013"+t.max:"101+"," pts")
+            e("div",{style:{fontSize:12,color:"#64748b",marginTop:2}},t.max<999?"0\u2013"+t.max:"121+"," pts")
           );
         })
       ),
@@ -254,7 +258,9 @@ function App(){
               e("li",null,"All three employers (SoftXPro, STS Software, SDLC Corp) are unverifiable"),
               e("li",null,"Resume language precisely mirrors the job posting"),
               e("li",null,"California phone number for a Canadian-resident candidate; disconnected"),
-              e("li",null,"E-verify failed; notarized substitute ID provided")
+              e("li",null,"E-verify failed; notarized substitute ID provided"),
+              e("li",null,"Response timing consistent with DPRK (UTC+8:30) timezone despite claimed Canada residency"),
+              e("li",null,"Phone number matches contact details of a previously flagged applicant cluster")
             )
           ),
           e("div",null,
