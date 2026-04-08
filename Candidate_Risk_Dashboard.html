@@ -24,11 +24,18 @@
   input[type="radio"] { accent-color: #3b82f6; }
   input[type="text"] { outline: none; }
   input[type="text"]:focus { border-color: #3b82f6 !important; }
+  input[type="date"] { outline: none; color-scheme: dark; }
+  input[type="date"]:focus { border-color: #3b82f6 !important; }
+  textarea { outline: none; font-family: inherit; }
+  textarea:focus { border-color: #3b82f6 !important; }
   button:hover { filter: brightness(1.15); }
   label:hover { background: #1e293b !important; }
   ::-webkit-scrollbar { width: 8px; }
   ::-webkit-scrollbar-track { background: #0f172a; }
   ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+  @media print {
+    .no-print { display: none !important; }
+  }
 </style>
 </head>
 <body>
@@ -38,36 +45,44 @@ const e = React.createElement;
 const { useState, useCallback } = React;
 
 const CATEGORIES = [
-  { id:"digital_footprint", name:"Digital Footprint", max:20, stage:"Stage 1", description:"Online professional presence verification",
-    levels:[{score:0,label:"Robust presence",desc:"LinkedIn, GitHub, publications, conference activity"},{score:5,label:"Moderate presence",desc:"LinkedIn exists but sparse; limited other footprint"},{score:10,label:"Minimal presence",desc:"Bare LinkedIn or single platform; no depth"},{score:15,label:"Near-zero presence",desc:"Profile exists but appears fabricated or very recent"},{score:20,label:"No verifiable footprint",desc:"Nothing found across any platform"}]},
-  { id:"employer_verification", name:"Employer Verification", max:15, stage:"Stage 1", description:"Can stated employers be independently verified?",
-    levels:[{score:0,label:"All verified",desc:"Every employer confirmed via public records or direct contact"},{score:5,label:"Most verified",desc:"One employer difficult to verify but others check out"},{score:8,label:"Some unverifiable",desc:"Multiple employers cannot be independently confirmed"},{score:15,label:"None verifiable",desc:"No employer can be linked to the candidate independently"}]},
-  { id:"resume_authenticity", name:"Resume Authenticity", max:10, stage:"Stage 1", description:"Does the resume appear generated from the job posting?",
-    levels:[{score:0,label:"Unique content",desc:"Distinctive language, specific accomplishments"},{score:5,label:"Some overlap",desc:"Moderate keyword alignment with job description"},{score:10,label:"Mirrors JD",desc:"Language is copy-pasted or algorithmically generated from posting"}]},
-  { id:"phone_contact", name:"Phone / Contact Integrity", max:10, stage:"Stage 1", description:"Phone number and contact information consistency",
-    levels:[{score:0,label:"Clean match",desc:"Active number, matches stated location and identity"},{score:3,label:"Minor mismatch",desc:"Area code doesn't match but number is active"},{score:5,label:"Moderate concern",desc:"VoIP number or different region"},{score:10,label:"Critical mismatch",desc:"Wrong country, disconnected, or swapped without explanation"}]},
-  { id:"identity_docs", name:"Identity Documentation", max:15, stage:"Stage 3\u20134", description:"E-verify, ID checks, and document consistency",
-    levels:[{score:0,label:"Clean pass",desc:"E-verify passed, live ID matches, all consistent"},{score:5,label:"Minor issue",desc:"Minor discrepancy resolved with explanation"},{score:8,label:"Moderate concern",desc:"E-verify delayed or required additional documentation"},{score:15,label:"E-verify fail + substitute",desc:"Electronic verification failed; notarized substitute provided"}]},
-  { id:"comp_behavior", name:"Compensation Behavior", max:5, stage:"Stage 3", description:"Salary expectations and negotiation patterns",
-    levels:[{score:0,label:"Normal negotiation",desc:"Reasonable expectations, standard back-and-forth"},{score:3,label:"Low expectations",desc:"Below-market ask with minimal negotiation"},{score:5,label:"Instant accept",desc:"Anomalously low comp, zero negotiation, immediate sign"}]},
-  { id:"interview_signals", name:"Interview Signals", max:10, stage:"Stage 2", description:"AI-assistance indicators, video issues, behavioral anomalies",
-    levels:[{score:0,label:"Clean interview",desc:"Natural responses, good video, no red flags"},{score:3,label:"Minor signals",desc:"One minor issue (single outage, one repeated question)"},{score:5,label:"Moderate signals",desc:"1\u20132 flags (occasional delays, generic answers)"},{score:10,label:"Strong signals",desc:"AI-assistance pattern, repeated requests, or video refusal"}]},
-  { id:"geo_consistency", name:"Geographic Consistency", max:5, stage:"Stage 2", description:"Do location claims hold up under scrutiny?",
-    levels:[{score:0,label:"All consistent",desc:"Address, phone, IP, local knowledge all align"},{score:3,label:"Minor mismatch",desc:"One inconsistency with plausible explanation"},{score:5,label:"Major contradiction",desc:"Multiple geographic inconsistencies or failed local knowledge test"}]},
-  { id:"hardware_onboarding", name:"Hardware / Onboarding", max:10, stage:"Stage 4", description:"Laptop activation and onboarding process signals",
-    levels:[{score:0,label:"Normal activation",desc:"Laptop activated within 48h, smooth onboarding"},{score:3,label:"Slight delay",desc:"Activated within 72h with reasonable explanation"},{score:5,label:"Delayed activation",desc:"Significant delay with start date change requested"},{score:10,label:"Never activated",desc:"Device never powered on + delay request. Possible reshipment."}]},
-  { id:"identity_continuity", name:"Identity Continuity", max:15, stage:"Stage 4", description:"Does the same person appear consistently across all stages?",
-    levels:[{score:0,label:"Consistent",desc:"Same individual across all touchpoints"},{score:5,label:"Minor variance",desc:"Slight appearance change, easily explained"},{score:8,label:"Notable discrepancy",desc:"Enough difference to warrant second verification"},{score:15,label:"Confirmed mismatch",desc:"Different person appeared at onboarding vs. interview"}]}
+  { id:"digital_footprint", name:"Digital Footprint", max:20, stage:"Prescreen", filterStages:["prescreen"], description:"Online professional presence verification",
+    levels:[{score:-1,label:"Not assessed / N/A",desc:"Not evaluated at this stage or not applicable"},{score:0,label:"Robust presence",desc:"LinkedIn, GitHub, publications, conference activity"},{score:5,label:"Moderate presence",desc:"LinkedIn exists but sparse; limited other footprint"},{score:10,label:"Minimal presence",desc:"Bare LinkedIn or single platform; no depth"},{score:15,label:"Near-zero presence",desc:"Profile exists but appears fabricated or very recent"},{score:20,label:"No verifiable footprint",desc:"Nothing found across any platform"}]},
+  { id:"resume_authenticity", name:"Resume Authenticity", max:10, stage:"Prescreen", filterStages:["prescreen"], description:"Resume originality, JD mirroring, and AI authorship signals",
+    levels:[{score:-1,label:"Not assessed / N/A",desc:"Not evaluated at this stage or not applicable"},{score:0,label:"Authentic and original",desc:"Distinctive voice, specific accomplishments, no JD mirroring; no AI indicators"},{score:3,label:"Minor concerns",desc:"Very clean or polished writing, or mild keyword alignment with JD; could be human"},{score:7,label:"Probable inauthenticity",desc:"Probable AI generation (uniform structure, AI-pattern language) or significant JD mirroring"},{score:10,label:"Confirmed inauthenticity",desc:"Confirmed AI authorship (metadata, templates) and/or language precisely mirrors posting"}]},
+  { id:"phone_contact", name:"Phone / Contact Integrity", max:10, stage:"Prescreen", filterStages:["prescreen"], description:"Phone number and contact information consistency",
+    levels:[{score:-1,label:"Not assessed / N/A",desc:"Not evaluated at this stage or not applicable"},{score:0,label:"Clean match",desc:"Active number, matches stated location and identity"},{score:3,label:"Minor mismatch",desc:"Area code doesn't match but number is active"},{score:5,label:"Moderate concern",desc:"VoIP number or different region"},{score:10,label:"Critical mismatch",desc:"Wrong country, disconnected, or swapped without explanation"}]},
+  { id:"geo_consistency", name:"Geographic Consistency", max:5, stage:"Prescreen", filterStages:["prescreen"], description:"Location claims, time zone patterns, and contact alignment",
+    levels:[{score:-1,label:"Not assessed / N/A",desc:"Not evaluated at this stage or not applicable"},{score:0,label:"Fully consistent",desc:"Address, phone, IP, timestamps, and local knowledge all align with stated location"},{score:3,label:"Minor inconsistency",desc:"One anomaly (odd response times or area code mismatch) with plausible explanation"},{score:5,label:"Significant inconsistency",desc:"Response patterns consistently misalign with stated time zone, or multiple geographic contradictions"}]},
+  { id:"third_party_handler", name:"Third-Party Handler", max:15, stage:"Prescreen", filterStages:["prescreen"], description:"Is a third party managing logistics, equipment, or communications?",
+    levels:[{score:-1,label:"Not assessed / N/A",desc:"Not evaluated at this stage or not applicable"},{score:0,label:"Direct only",desc:"Candidate handles all communication and logistics directly"},{score:5,label:"Recruiter involved",desc:"Recruiter present but candidate handles direct correspondence"},{score:10,label:"Handler manages logistics",desc:"Third party routes most equipment, communication, or payroll"},{score:15,label:"Full intermediary",desc:"All equipment, payroll, and comms through intermediary; candidate rarely communicates directly"}]},
+  { id:"interview_signals", name:"Interview Signals", max:10, stage:"Interview", filterStages:["interview"], description:"AI assistance, video anomalies, scripting, and behavioral red flags",
+    levels:[{score:-1,label:"Not assessed / N/A",desc:"Not evaluated at this stage or not applicable"},{score:0,label:"Clean interview",desc:"Natural, spontaneous responses; good video; no red flags or lag indicators"},{score:3,label:"Minor signals",desc:"Occasional unusual pause, slightly stilted phrasing, or one minor anomaly"},{score:7,label:"Probable assistance",desc:"Noticeable lag pattern, verbatim reading, generic scripted answers, or 1\u20132 moderate behavioral flags"},{score:10,label:"Confirmed assistance or refusal",desc:"Earpiece, second person visible, live AI tool on screen, repeated restart requests, or video refusal"}]},
+  { id:"technical_screen", name:"Technical Screen Signals", max:15, stage:"Interview", filterStages:["interview"], description:"Consistency and authenticity of technical performance",
+    levels:[{score:-1,label:"Not assessed / N/A",desc:"Not evaluated at this stage or not applicable"},{score:0,label:"Consistent and explained",desc:"Explains all work clearly; performance consistent across rounds"},{score:5,label:"Minor gaps",desc:"Slight difficulty explaining one approach; modest improvement between rounds"},{score:10,label:"Unexplained work",desc:"Cannot explain code or design choices; dramatic improvement between rounds"},{score:15,label:"Confirmed assistance",desc:"Second screen, timing anomalies, or live AI tool visible during assessment"}]},
+  { id:"reference_integrity", name:"Reference Integrity", max:10, stage:"Interview", filterStages:["interview"], description:"Can references be independently located and verified?",
+    levels:[{score:-1,label:"Not assessed / N/A",desc:"Not evaluated at this stage or not applicable"},{score:0,label:"Fully verifiable",desc:"References independently found; provide specific detailed answers"},{score:3,label:"Partially verifiable",desc:"One reference hard to find independently; answers somewhat vague"},{score:7,label:"Scripted or unavailable",desc:"Cannot be found independently; answers suspiciously identical or rehearsed"},{score:10,label:"Coordinated or fabricated",desc:"References share contact info, refuse contact, or are clearly the same person"}]},
+  { id:"comp_behavior", name:"Compensation Behavior", max:5, stage:"Offer", filterStages:["offer"], description:"Salary expectations and negotiation patterns",
+    levels:[{score:-1,label:"Not assessed / N/A",desc:"Not evaluated at this stage or not applicable"},{score:0,label:"Normal negotiation",desc:"Reasonable expectations, standard back-and-forth"},{score:3,label:"Low expectations",desc:"Below-market ask with minimal negotiation"},{score:5,label:"Instant accept",desc:"Anomalously low comp, zero negotiation, immediate sign"}]},
+  { id:"employer_verification", name:"Employer Verification", max:15, stage:"Offer", filterStages:["offer"], description:"Can stated employers be independently verified?",
+    levels:[{score:-1,label:"Not assessed / N/A",desc:"Not evaluated at this stage or not applicable"},{score:0,label:"All verified",desc:"Every employer confirmed via public records or direct contact"},{score:5,label:"Most verified",desc:"One employer difficult to verify but others check out"},{score:8,label:"Some unverifiable",desc:"Multiple employers cannot be independently confirmed"},{score:15,label:"None verifiable",desc:"No employer can be linked to the candidate independently"}]},
+  { id:"identity_docs", name:"Identity Documentation", max:15, stage:"Background Check", filterStages:["background"], description:"E-verify, ID checks, and document consistency",
+    levels:[{score:-1,label:"Not assessed / N/A",desc:"Not evaluated at this stage or not applicable"},{score:0,label:"Clean pass",desc:"E-verify passed, live ID matches, all consistent"},{score:5,label:"Minor issue",desc:"Minor discrepancy resolved with explanation"},{score:8,label:"Moderate concern",desc:"E-verify delayed or required additional documentation"},{score:15,label:"E-verify fail + substitute",desc:"Electronic verification failed; notarized substitute provided"}]},
+  { id:"payment_flags", name:"Payment / Financial Flags", max:10, stage:"Background Check", filterStages:["background"], description:"Banking details, payment method, and financial routing signals",
+    levels:[{score:-1,label:"Not assessed / N/A",desc:"Not evaluated at this stage or not applicable"},{score:0,label:"Standard",desc:"Direct deposit with routing consistent with stated location"},{score:3,label:"Minor mismatch",desc:"Third-party payroll service or routing to different state than claimed"},{score:7,label:"High concern",desc:"Foreign bank account or unusual payment method requested"},{score:10,label:"Critical flag",desc:"Cryptocurrency preference, immediate post-hire routing change, or account linked to known fraud patterns"}]},
+  { id:"hardware_onboarding", name:"Hardware / Onboarding", max:10, stage:"Background Check", filterStages:["background"], description:"Laptop activation and onboarding process signals",
+    levels:[{score:-1,label:"Not assessed / N/A",desc:"Not evaluated at this stage or not applicable"},{score:0,label:"Normal activation",desc:"Laptop activated within 48h, smooth onboarding"},{score:3,label:"Slight delay",desc:"Activated within 72h with reasonable explanation"},{score:5,label:"Delayed activation",desc:"Significant delay with start date change requested"},{score:10,label:"Never activated",desc:"Device never powered on + delay request. Possible reshipment."}]},
+  { id:"identity_continuity", name:"Identity Continuity", max:15, stage:"Background Check", filterStages:["background"], description:"Does the same person appear consistently across all stages?",
+    levels:[{score:-1,label:"Not assessed / N/A",desc:"Not evaluated at this stage or not applicable"},{score:0,label:"Consistent",desc:"Same individual across all touchpoints"},{score:5,label:"Minor variance",desc:"Slight appearance change, easily explained"},{score:8,label:"Notable discrepancy",desc:"Enough difference to warrant second verification"},{score:15,label:"Confirmed mismatch",desc:"Different person appeared at onboarding vs. interview"}]}
 ];
 
 const RISK_TIERS = [
-  {max:15,level:"LOW",color:"#22c55e",bg:"#f0fdf4",action:"Proceed normally. Standard monitoring."},
-  {max:35,level:"MODERATE",color:"#ca8a04",bg:"#fefce8",action:"Proceed with caution. Additional OSINT verification. Flag for CISO awareness."},
-  {max:60,level:"HIGH",color:"#dc2626",bg:"#fef2f2",action:"Do NOT extend offer without CISO approval. Full OSINT + live ID verification required."},
+  {max:25,level:"LOW",color:"#22c55e",bg:"#f0fdf4",action:"Proceed normally. Standard monitoring."},
+  {max:60,level:"MODERATE",color:"#ca8a04",bg:"#fefce8",action:"Proceed with caution. Additional OSINT verification. Flag for CISO awareness."},
+  {max:100,level:"HIGH",color:"#dc2626",bg:"#fef2f2",action:"Do NOT extend offer without CISO approval. Full OSINT + live ID verification required."},
   {max:999,level:"CRITICAL",color:"#991b1b",bg:"#450a0a",action:"REJECT. CISO + Legal sign-off required. Preserve evidence. Initiate reporting."}
 ];
 
-const EXAMPLE_SCORES = {digital_footprint:20,employer_verification:15,resume_authenticity:10,phone_contact:10,identity_docs:15,comp_behavior:5,interview_signals:5,geo_consistency:5,hardware_onboarding:10,identity_continuity:15};
+const EXAMPLE_SCORES = {digital_footprint:20,employer_verification:15,resume_authenticity:10,phone_contact:10,reference_integrity:10,geo_consistency:5,third_party_handler:15,interview_signals:7,technical_screen:10,comp_behavior:5,identity_docs:15,payment_flags:7,hardware_onboarding:10,identity_continuity:15};
 
 function getRiskTier(score){ return RISK_TIERS.find(t=>score<=t.max)||RISK_TIERS[RISK_TIERS.length-1]; }
 
@@ -83,7 +98,7 @@ function GaugeRing({score,max,size}){
 }
 
 function MiniBar({score,max,color}){
-  var pct=max>0?(score/max)*100:0;
+  var pct=max>0?(Math.max(0,score)/max)*100:0;
   return e("div",{style:{display:"flex",alignItems:"center",gap:8,width:"100%"}},
     e("div",{style:{flex:1,height:8,borderRadius:4,background:"#1e293b",overflow:"hidden"}},
       e("div",{style:{width:pct+"%",height:"100%",borderRadius:4,background:color,transition:"width 0.4s ease"}})
@@ -92,9 +107,9 @@ function MiniBar({score,max,color}){
   );
 }
 
-function CategoryCard({cat,score,onChange,isExample}){
-  var pct=cat.max>0?score/cat.max:0;
-  var barColor=pct>=0.8?"#dc2626":pct>=0.5?"#ca8a04":pct>0?"#3b82f6":"#22c55e";
+function CategoryCard({cat,score,onChange,isExample,note,onNoteChange}){
+  var pct=cat.max>0?Math.max(0,score)/cat.max:0;
+  var barColor=score<0?"#475569":pct>=0.8?"#dc2626":pct>=0.5?"#ca8a04":pct>0?"#3b82f6":"#22c55e";
   return e("div",{style:{background:"#0f172a",border:"1px solid "+(pct>=0.8?"#dc262644":"#1e293b"),borderRadius:10,padding:"16px 18px",display:"flex",flexDirection:"column",gap:10}},
     e("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}},
       e("div",null,
@@ -113,31 +128,43 @@ function CategoryCard({cat,score,onChange,isExample}){
           )
         );
       })
-    )
+    ),
+    !isExample?e("textarea",{value:note||"",onChange:function(ev){onNoteChange(cat.id,ev.target.value)},placeholder:"Evidence / notes\u2026",maxLength:1000,rows:2,style:{width:"100%",resize:"vertical",background:"#1e293b",border:"1px solid #334155",borderRadius:6,padding:"6px 10px",color:"#94a3b8",fontSize:12,marginTop:4}}):null
   );
 }
 
 function App(){
   var modeState=useState("example"), mode=modeState[0], setMode=modeState[1];
   var scState=useState(Object.assign({},EXAMPLE_SCORES)), scores=scState[0];
-  var blankInit={}; CATEGORIES.forEach(function(c){blankInit[c.id]=0;});
+  var blankInit={}; CATEGORIES.forEach(function(c){blankInit[c.id]=-1;});
   var blState=useState(Object.assign({},blankInit)), blankScores=blState[0], setBlankScores=blState[1];
   var nameState=useState(""), candidateName=nameState[0], setCandidateName=nameState[1];
   var roleState=useState(""), candidateRole=roleState[0], setCandidateRole=roleState[1];
+  var stageState=useState("all"), selectedStage=stageState[0], setSelectedStage=stageState[1];
+  var notesInit={}; CATEGORIES.forEach(function(c){notesInit[c.id]="";});
+  var notesState=useState(notesInit), notes=notesState[0], setNotes=notesState[1];
+  var assessorState=useState(""), assessor=assessorState[0], setAssessor=assessorState[1];
+  var assessDateState=useState(new Date().toISOString().split('T')[0]), assessDate=assessDateState[0], setAssessDate=assessDateState[1];
 
   var activeScores=mode==="example"?scores:blankScores;
   var isExample=mode==="example";
-  var totalScore=0; Object.keys(activeScores).forEach(function(k){totalScore+=activeScores[k];});
+  var totalScore=0; Object.keys(activeScores).forEach(function(k){totalScore+=Math.max(0,activeScores[k]);});
   var maxScore=0; CATEGORIES.forEach(function(c){maxScore+=c.max;});
   var tier=getRiskTier(totalScore);
   var flagsHit=CATEGORIES.filter(function(c){return activeScores[c.id]>0;}).length;
+  var visibleCategories=selectedStage==="all"?CATEGORIES:CATEGORIES.filter(function(c){return c.filterStages.includes(selectedStage);});
 
   var handleChange=useCallback(function(id,val){
     setBlankScores(function(prev){var n=Object.assign({},prev);n[id]=val;return n;});
   },[]);
+  var handleNoteChange=useCallback(function(id,val){
+    setNotes(function(prev){var n=Object.assign({},prev);n[id]=val;return n;});
+  },[]);
   function handleReset(){
-    var r={}; CATEGORIES.forEach(function(c){r[c.id]=0;}); setBlankScores(r);
+    var r={}; CATEGORIES.forEach(function(c){r[c.id]=-1;}); setBlankScores(r);
+    var rn={}; CATEGORIES.forEach(function(c){rn[c.id]="";}); setNotes(rn);
     setCandidateName(""); setCandidateRole("");
+    setAssessor(""); setAssessDate(new Date().toISOString().split('T')[0]);
   }
 
   return e("div",{style:{minHeight:"100vh"}},
@@ -151,9 +178,10 @@ function App(){
             e("p",{style:{fontSize:12,color:"#64748b"}},"Security & HR \u00b7 Confidential \u00b7 V2")
           )
         ),
-        e("div",{style:{display:"flex",gap:8}},
+        e("div",{className:"no-print",style:{display:"flex",gap:8}},
           e("button",{onClick:function(){setMode("example")},style:{padding:"8px 16px",borderRadius:6,border:"1px solid #334155",background:mode==="example"?"#1e40af":"#0f172a",color:mode==="example"?"#fff":"#94a3b8",cursor:"pointer",fontSize:13,fontWeight:600,transition:"all 0.15s"}},"Example: Flagged Candidate"),
-          e("button",{onClick:function(){setMode("assess")},style:{padding:"8px 16px",borderRadius:6,border:"1px solid #334155",background:mode==="assess"?"#1e40af":"#0f172a",color:mode==="assess"?"#fff":"#94a3b8",cursor:"pointer",fontSize:13,fontWeight:600,transition:"all 0.15s"}},"New Assessment")
+          e("button",{onClick:function(){setMode("assess")},style:{padding:"8px 16px",borderRadius:6,border:"1px solid #334155",background:mode==="assess"?"#1e40af":"#0f172a",color:mode==="assess"?"#fff":"#94a3b8",cursor:"pointer",fontSize:13,fontWeight:600,transition:"all 0.15s"}},"New Assessment"),
+          e("button",{onClick:function(){window.print()},style:{padding:"8px 16px",borderRadius:6,border:"1px solid #334155",background:"#0f172a",color:"#94a3b8",cursor:"pointer",fontSize:13,fontWeight:600,transition:"all 0.15s"}},"Print / Export PDF")
         )
       )
     ),
@@ -169,7 +197,8 @@ function App(){
               candidateName?e("span",{style:{fontSize:14,color:"#94a3b8",fontWeight:500}},candidateName+(candidateRole?" \u00b7 "+candidateRole:"")):null
           ),
           e("p",{style:{fontSize:14,color:"#cbd5e1",lineHeight:1.5}},tier.action),
-          mode==="example"?e("p",{style:{marginTop:8,fontSize:12,color:"#64748b",lineHeight:1.4}},"This example shows a confirmed DPRK IT worker fraud attempt with 10 red flags across all protocol stages. The candidate scored 110/115 \u2014 near-maximum risk across every category."):null
+          mode==="assess"&&(assessor||assessDate)?e("p",{style:{marginTop:6,fontSize:12,color:"#64748b"}},"Assessed by: "+(assessor||"\u2014")+" \u00b7 Date: "+(assessDate||"\u2014")):null,
+          mode==="example"?e("p",{style:{marginTop:8,fontSize:12,color:"#64748b",lineHeight:1.4}},"This example shows a confirmed DPRK IT worker fraud attempt with red flags across all protocol stages. The candidate scored 154/165 \u2014 near-maximum risk across every category."):null
         ),
         e("div",{style:{textAlign:"center"}},
           e("div",{style:{fontSize:11,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.08em",fontWeight:600}},"Flags Hit"),
@@ -178,29 +207,39 @@ function App(){
         )
       ),
 
-      // Name/role inputs for assess mode
+      // Name/role/assessor/date inputs for assess mode
       mode==="assess"?e("div",{style:{display:"flex",gap:12,marginBottom:20,flexWrap:"wrap",alignItems:"center"}},
         e("input",{type:"text",placeholder:"Candidate name",value:candidateName,onChange:function(ev){setCandidateName(ev.target.value)},maxLength:200,autoComplete:"off",style:{padding:"8px 14px",borderRadius:6,border:"1px solid #334155",background:"#0f172a",color:"#e2e8f0",fontSize:14,width:220}}),
         e("input",{type:"text",placeholder:"Applied role",value:candidateRole,onChange:function(ev){setCandidateRole(ev.target.value)},maxLength:200,autoComplete:"off",style:{padding:"8px 14px",borderRadius:6,border:"1px solid #334155",background:"#0f172a",color:"#e2e8f0",fontSize:14,width:220}}),
-        e("button",{onClick:handleReset,style:{padding:"8px 16px",borderRadius:6,border:"1px solid #334155",background:"#0f172a",color:"#94a3b8",cursor:"pointer",fontSize:13,fontWeight:600}},"Reset All")
+        e("input",{type:"text",placeholder:"Assessor name",value:assessor,onChange:function(ev){setAssessor(ev.target.value)},maxLength:200,autoComplete:"off",style:{padding:"8px 14px",borderRadius:6,border:"1px solid #334155",background:"#0f172a",color:"#e2e8f0",fontSize:14,width:180}}),
+        e("input",{type:"date",value:assessDate,onChange:function(ev){setAssessDate(ev.target.value)},style:{padding:"8px 14px",borderRadius:6,border:"1px solid #334155",background:"#0f172a",color:"#e2e8f0",fontSize:14,width:160}}),
+        e("button",{onClick:handleReset,className:"no-print",style:{padding:"8px 16px",borderRadius:6,border:"1px solid #334155",background:"#0f172a",color:"#94a3b8",cursor:"pointer",fontSize:13,fontWeight:600}},"Reset All")
       ):null,
 
       // Tier legend
-      e("div",{style:{display:"grid",gridTemplateColumns:"repeat(4, 1fr)",gap:10,marginBottom:24}},
+      e("div",{className:"no-print",style:{display:"grid",gridTemplateColumns:"repeat(4, 1fr)",gap:10,marginBottom:24}},
         RISK_TIERS.map(function(t,i){
           var prevMax=i>0?RISK_TIERS[i-1].max:-1;
           var active=totalScore<=t.max&&totalScore>prevMax;
           return e("div",{key:t.level,style:{padding:"10px 14px",borderRadius:8,border:"1px solid "+t.color+"33",background:active?t.color+"22":"#0f172a",opacity:active?1:0.5,transition:"all 0.3s ease"}},
             e("div",{style:{fontSize:11,fontWeight:800,color:t.color,letterSpacing:"0.06em"}},t.level),
-            e("div",{style:{fontSize:12,color:"#64748b",marginTop:2}},t.max<999?"0\u2013"+t.max:"61+"," pts")
+            e("div",{style:{fontSize:12,color:"#64748b",marginTop:2}},t.max<999?"0\u2013"+t.max:"101+"," pts")
           );
+        })
+      ),
+
+      // Stage filter tabs
+      e("div",{className:"no-print",style:{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap"}},
+        [["all","All Stages"],["prescreen","Prescreen"],["interview","Interview"],["offer","Offer"],["background","Background Check"]].map(function(pair){
+          var val=pair[0], label=pair[1];
+          return e("button",{key:val,onClick:function(){setSelectedStage(val)},style:{padding:"6px 14px",borderRadius:6,border:"1px solid #334155",background:selectedStage===val?"#1e40af":"#0f172a",color:selectedStage===val?"#fff":"#94a3b8",cursor:"pointer",fontSize:13,fontWeight:600,transition:"all 0.15s"}},label);
         })
       ),
 
       // Category cards
       e("div",{style:{display:"grid",gridTemplateColumns:"repeat(auto-fill, minmax(380px, 1fr))",gap:14}},
-        CATEGORIES.map(function(cat){
-          return e(CategoryCard,{key:cat.id,cat:cat,score:activeScores[cat.id],onChange:handleChange,isExample:isExample});
+        visibleCategories.map(function(cat){
+          return e(CategoryCard,{key:cat.id,cat:cat,score:activeScores[cat.id],onChange:handleChange,isExample:isExample,note:notes[cat.id],onNoteChange:handleNoteChange});
         })
       ),
 
