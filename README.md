@@ -2,9 +2,6 @@
 
 A standalone, single-file HTML tool for assessing candidate fraud risk — designed to detect patterns consistent with DPRK IT worker fraud and similar hiring threats.
 
-**Public work by [Colorado Security](https://www.colorado-security.com/)**
-V1: Ralph Forsythe, based upon the work of Joey Stanford | V2: Joey Stanford, CISO
-
 ---
 
 ![Candidate Fraud Risk Assessment — Example: Flagged Candidate showing a CRITICAL RISK score of 169/196 with 16 flags hit](Screenshot.png)
