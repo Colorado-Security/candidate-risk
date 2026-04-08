@@ -4,9 +4,10 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "lint": "npm run lint:html && npm run lint:js",
+    "lint": "npm run lint:html && npm run lint:js && npm run lint:actions",
     "lint:html": "htmlhint Candidate_Risk_Dashboard.html",
-    "lint:js": "eslint Candidate_Risk_Dashboard.html"
+    "lint:js": "eslint Candidate_Risk_Dashboard.html",
+    "lint:actions": "actionlint"
   },
   "keywords": [],
   "author": "",
