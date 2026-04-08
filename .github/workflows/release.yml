@@ -30,8 +30,15 @@ jobs:
           VERSION: ${{ github.ref_name }}
         run: sed -i "s/__VERSION__/${VERSION}/g" Candidate_Risk_Dashboard.html
 
+      - name: Package release zip
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: zip "candidate-risk-${VERSION}.zip" Candidate_Risk_Dashboard.html
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: Candidate_Risk_Dashboard.html
+          files: |
+            Candidate_Risk_Dashboard.html
+            candidate-risk-*.zip
           generate_release_notes: true
