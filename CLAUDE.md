@@ -16,12 +16,13 @@ A single-file, standalone HTML application for candidate fraud risk assessment. 
 
 ```bash
 npm install              # install dev deps (first time)
-npm run lint             # run both linters
+npm run lint             # run all linters (HTML + JS + Actions)
 npm run lint:html        # HTMLHint only
 npm run lint:js          # ESLint only (lints inline <script> via eslint-plugin-html)
+npm run lint:actions     # actionlint only (GitHub Actions workflows)
 ```
 
-**Pre-commit hook:** Uses the `pre-commit` framework. After `npm install`, run `pre-commit install` once to activate it. The hook runs both linters against staged `.html` files on every commit.
+**Pre-commit hook:** Uses the `pre-commit` framework. After `npm install`, run `pre-commit install` once to activate it. The hook runs all three linters on every commit (actionlint for `.yml` files, HTMLHint + ESLint for `.html` files).
 
 Config files: `.htmlhintrc` (HTML rules), `eslint.config.mjs` (JS rules — browser globals + `React`/`ReactDOM` as readonly).
 

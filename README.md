@@ -53,12 +53,13 @@ Sixteen categories span four hiring stages. Each category includes a **Not Asses
 npm install            # install dev dependencies (first time only)
 pre-commit install     # activate pre-commit hook (first time only)
 
-npm run lint           # run both linters
+npm run lint           # run all linters (HTML + JS + Actions)
 npm run lint:html      # HTMLHint only
 npm run lint:js        # ESLint only (lints inline <script> via eslint-plugin-html)
+npm run lint:actions   # actionlint only (GitHub Actions workflows)
 ```
 
-The pre-commit hook runs both linters against staged `.html` files on every commit.
+The pre-commit hook runs all three linters on every commit (actionlint for `.yml` files, HTMLHint + ESLint for `.html` files).
 
 ## Security
 
