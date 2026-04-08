@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' https://cdnjs.cloudflare.com/; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; frame-src 'none'; form-action 'none'; object-src 'none'; base-uri 'self';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' https://cdnjs.cloudflare.com/; style-src 'unsafe-inline'; img-src 'self' data:; connect-src 'none'; frame-src 'none'; frame-ancestors 'none'; form-action 'none'; object-src 'none'; base-uri 'self'; worker-src 'none'; upgrade-insecure-requests;">
 <meta name="referrer" content="no-referrer">
 <meta name="robots" content="noindex, nofollow, noarchive, nocache">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate, max-age=0">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<meta http-equiv="Permissions-Policy" content="geolocation=(), microphone=(), camera=(), payment=(), usb=(), accelerometer=(), gyroscope=(), magnetometer=(), fullscreen=(), midi=(), browsing-topics=()">
+<meta http-equiv="Permissions-Policy" content="geolocation=(), microphone=(), camera=(), payment=(), usb=(), accelerometer=(), gyroscope=(), magnetometer=(), fullscreen=(), midi=(), browsing-topics=(), clipboard-read=(), clipboard-write=(), notification=(), picture-in-picture=(), screen-wake-lock=()">
 <title>Candidate Fraud Risk Assessment</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js" integrity="sha384-tMH8h3BGESGckSAVGZ82T9n90ztNXxvdwvdM6UoR56cYcf+0iGXBliJ29D+wZ/x8" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js" integrity="sha384-bm7MnzvK++ykSwVJ2tynSE5TRdN+xL418osEVF2DE/L/gfWHj91J2Sphe582B1Bh" crossorigin="anonymous"></script>
@@ -91,7 +91,9 @@ function getRiskTier(score){ return RISK_TIERS.find(t=>score<=t.max)||RISK_TIERS
 
 function encodeReview(payload){
   var json=JSON.stringify(payload);
-  return btoa(unescape(encodeURIComponent(json))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
+  var bytes=new TextEncoder().encode(json);
+  var binary=Array.from(bytes,function(b){return String.fromCharCode(b);}).join('');
+  return btoa(binary).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
 }
 
 function extractCode(raw){
@@ -104,11 +106,14 @@ function decodeReview(raw){
   try{
     var b64=extractCode(raw).replace(/-/g,'+').replace(/_/g,'/');
     var pad=b64.length%4===0?'':'===='.slice(b64.length%4);
-    var obj=JSON.parse(decodeURIComponent(escape(atob(b64+pad))));
+    var binary=atob(b64+pad);
+    var bytes=new Uint8Array(Array.from(binary,function(c){return c.charCodeAt(0);}));
+    var obj=JSON.parse(new TextDecoder().decode(bytes));
     if(!obj||typeof obj.s!=='object') return null;
+    var safeStr=function(v,max){return typeof v==='string'?v.slice(0,max):'';};
     var fullScores={};
     CATEGORIES.forEach(function(c){fullScores[c.id]=obj.s[c.id]!==undefined?obj.s[c.id]:-1;});
-    return {v:obj.v||1,name:obj.n||'',role:obj.ro||'',assessor:obj.a||'',date:obj.d||'',scores:fullScores};
+    return {v:obj.v||1,name:safeStr(obj.n,200),role:safeStr(obj.ro,200),assessor:safeStr(obj.a,200),date:safeStr(obj.d,10),scores:fullScores};
   }catch(_){return null;} // eslint-disable-line no-unused-vars
 }
 
@@ -452,13 +457,11 @@ function PanelView({panelReviews,panelInput,setPanelInput,panelInputError,setPan
 function App(){
   var modeState=useState("example"), mode=modeState[0], setMode=modeState[1];
   var scState=useState(Object.assign({},EXAMPLE_SCORES)), scores=scState[0];
-  var blankInit={}; CATEGORIES.forEach(function(c){blankInit[c.id]=-1;});
-  var blState=useState(Object.assign({},blankInit)), blankScores=blState[0], setBlankScores=blState[1];
+  var blState=useState(function(){var i={};CATEGORIES.forEach(function(c){i[c.id]=-1;});return i;}), blankScores=blState[0], setBlankScores=blState[1];
   var nameState=useState(""), candidateName=nameState[0], setCandidateName=nameState[1];
   var roleState=useState(""), candidateRole=roleState[0], setCandidateRole=roleState[1];
   var stageState=useState("all"), selectedStage=stageState[0], setSelectedStage=stageState[1];
-  var notesInit={}; CATEGORIES.forEach(function(c){notesInit[c.id]="";});
-  var notesState=useState(notesInit), notes=notesState[0], setNotes=notesState[1];
+  var notesState=useState(function(){var i={};CATEGORIES.forEach(function(c){i[c.id]="";});return i;}), notes=notesState[0], setNotes=notesState[1];
   var assessorState=useState(""), assessor=assessorState[0], setAssessor=assessorState[1];
   var assessDateState=useState(new Date().toISOString().split('T')[0]), assessDate=assessDateState[0], setAssessDate=assessDateState[1];
 
